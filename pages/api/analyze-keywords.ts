@@ -23,7 +23,7 @@ ${JSON.stringify(keywordData, null, 2)}
 답변은 마크다운 형식으로 작성해주세요.`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1",
       messages: [
         {
           role: "system",

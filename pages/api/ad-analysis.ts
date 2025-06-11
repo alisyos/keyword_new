@@ -111,7 +111,7 @@ async function analyzeAdImage(base64Image: string, keyword: string, companyName:
   try {
     // OpenAI Vision API를 사용하여 이미지 분석
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1",
       messages: [
         {
           role: "system",

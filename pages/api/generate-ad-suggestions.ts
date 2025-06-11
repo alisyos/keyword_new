@@ -64,7 +64,7 @@ async function generateAdSuggestions(
 
     // OpenAI를 사용한 광고 소재 생성
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4.1",
       temperature: 0.7,
       messages: [
         {

@@ -318,11 +318,20 @@ async function searchNaverNews(keyword: string): Promise<SearchResult> {
 async function summarizeWithAI(content: string, keyword: string): Promise<string> {
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1",
       messages: [
         {
           role: "system",
-          content: `당신은 검색 결과를 요약하는 전문가입니다. 다음 검색 결과에서 "${keyword}"와 관련된 중요한 정보를 추출하여 500자 내외로 요약해주세요. 요약은 한국어로 작성해야 합니다.`
+          content: `당신은 검색 결과를 요약하는 전문가입니다. 다음 검색 결과에서 "${keyword}"와 관련된 중요한 정보를 추출하여 넘버링된 요약으로 작성해주세요. 
+
+요약 형식:
+1. 첫 번째 주요 내용
+2. 두 번째 주요 내용  
+3. 세 번째 주요 내용
+4. 네 번째 주요 내용
+5. 다섯 번째 주요 내용
+
+각 항목은 한 문장으로 간결하게 작성하고, 총 5개 항목으로 구성해주세요. 요약은 한국어로 작성해야 합니다.`
         },
         {
           role: "user",
