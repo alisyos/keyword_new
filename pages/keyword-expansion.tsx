@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Head from 'next/head';
 import axios from 'axios';
 import { marked } from 'marked';
@@ -31,12 +31,14 @@ export default function KeywordExpansion() {
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [analysis, setAnalysis] = useState('');
   const [userQuery, setUserQuery] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +152,23 @@ export default function KeywordExpansion() {
     );
   };
 
+  const handleQueryChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setUserQuery(e.target.value);
+    // 높이 자동 조절
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAnalyze();
+    }
+    // Shift+Enter는 기본 동작(줄바꿈) 유지
+  };
+
   const handleAnalyze = async () => {
     if (!userQuery.trim()) {
       alert('분석을 위한 질문을 입력해주세요.');
@@ -180,6 +199,57 @@ export default function KeywordExpansion() {
       setError('AI 분석 중 오류가 발생했습니다.');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    if (!analysis || !result) {
+      alert('다운로드할 분석 결과가 없습니다.');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const response = await fetch('/api/convert-to-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          keywordData: getSortedKeywordList(),
+          analysis: analysis,
+          searchKeyword: result.keyword,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('엑셀 변환 중 오류가 발생했습니다.');
+      }
+
+      const data = await response.json();
+
+      // Base64를 Blob으로 변환
+      const binaryString = atob(data.data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: data.mimeType });
+
+      // 다운로드 트리거
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = data.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('엑셀 다운로드 오류:', error);
+      alert('엑셀 파일 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -252,12 +322,14 @@ export default function KeywordExpansion() {
                   </div>
                   <div className="p-6">
                     <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                      <input
-                        type="text"
+                      <textarea
+                        ref={textareaRef}
                         value={userQuery}
-                        onChange={(e) => setUserQuery(e.target.value)}
-                        placeholder="분석을 위한 질문을 입력하세요 (예: 핵심 키워드 추려주세요, 시장 분석해주세요)"
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onChange={handleQueryChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="분석을 위한 질문을 입력하세요 (예: 핵심 키워드 추려주세요, 시장 분석해주세요)&#10;Enter: 분석 실행 | Shift+Enter: 줄바꿈"
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px] max-h-[200px] overflow-y-auto resize-none"
+                        rows={1}
                       />
                       <button
                         onClick={handleAnalyze}
@@ -282,9 +354,37 @@ export default function KeywordExpansion() {
 
                     {showAnalysis ? (
                       <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl p-6 shadow-inner">
+                        <div className="flex justify-end mb-4">
+                          <button
+                            onClick={handleDownloadExcel}
+                            disabled={downloading}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white shadow-md transition-all ${
+                              downloading
+                                ? 'bg-green-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:shadow-lg hover:from-green-600 hover:to-emerald-700'
+                            }`}
+                          >
+                            {downloading ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                변환 중...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                엑셀 다운로드
+                              </>
+                            )}
+                          </button>
+                        </div>
                         <div className="prose max-w-none">
-                          <div dangerouslySetInnerHTML={{ 
-                            __html: marked(analysis, { breaks: true }) 
+                          <div dangerouslySetInnerHTML={{
+                            __html: marked(analysis, { breaks: true })
                           }} />
                         </div>
                       </div>
