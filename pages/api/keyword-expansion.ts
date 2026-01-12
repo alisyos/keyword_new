@@ -58,11 +58,7 @@ const handler = async (
 
     const requestParams = {
       hintKeywords: keyword,
-      showDetail: 1,
-      customerId: customerId,
-      biztpId: 1,
-      event: 1,
-      month: new Date().getMonth() + 1
+      showDetail: 1
     };
 
     console.log('API Request:', {
