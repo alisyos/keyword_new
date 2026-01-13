@@ -46,6 +46,9 @@ const Navbar = () => {
           {/* 데스크톱 메뉴 */}
           <div className="hidden md:block">
             <div className="ml-10 flex items-center space-x-4">
+              <Link href="/integrated-analysis" className={getLinkClass('/integrated-analysis')}>
+                통합 분석
+              </Link>
               <Link href="/" className={getLinkClass('/')}>
                 키워드 분석
               </Link>
@@ -111,6 +114,9 @@ const Navbar = () => {
         id="mobile-menu"
       >
         <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white shadow-lg">
+          <Link href="/integrated-analysis" className={`block ${getLinkClass('/integrated-analysis')}`}>
+            통합 분석
+          </Link>
           <Link href="/" className={`block ${getLinkClass('/')}`}>
             키워드 분석
           </Link>

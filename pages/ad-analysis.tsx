@@ -27,6 +27,8 @@ export default function AdAnalysis() {
   const [companyName, setCompanyName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [adText, setAdText] = useState('');
+  const [inputMode, setInputMode] = useState<'image' | 'text'>('image');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AdAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,39 +58,51 @@ export default function AdAnalysis() {
   // 폼 제출 핸들러
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!keyword) {
       setError('검색 키워드를 입력해주세요.');
       return;
     }
-    
+
     if (!companyName) {
       setError('업체명을 입력해주세요.');
       return;
     }
-    
-    if (!file) {
+
+    // 이미지 모드일 때는 이미지 필수, 텍스트 모드일 때는 텍스트 필수
+    if (inputMode === 'image' && !file) {
       setError('광고 검색결과 캡처 이미지를 업로드해주세요.');
       return;
     }
-    
+
+    if (inputMode === 'text' && !adText.trim()) {
+      setError('광고 검색결과 텍스트를 입력해주세요.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    
+
     try {
       // 이미지 파일과 함께 폼 데이터 생성
       const formData = new FormData();
       formData.append('keyword', keyword);
       formData.append('companyName', companyName);
-      formData.append('image', file);
-      
+      formData.append('inputMode', inputMode);
+
+      if (inputMode === 'image' && file) {
+        formData.append('image', file);
+      } else if (inputMode === 'text') {
+        formData.append('adText', adText);
+      }
+
       // API 요청
       const response = await axios.post('/api/ad-analysis', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
-      
+
       setResult(response.data);
     } catch (err: any) {
       console.error('광고 분석 중 오류 발생:', err);
@@ -155,55 +169,100 @@ export default function AdAnalysis() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  광고 검색결과 캡처 이미지 <span className="text-red-500">*</span>
+                  광고 검색결과 <span className="text-red-500">*</span>
                 </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-                  <div className="space-y-1 text-center">
-                    {imagePreview ? (
-                      <div className="mb-4">
-                        <img
-                          src={imagePreview}
-                          alt="광고 캡처 미리보기"
-                          className="mx-auto h-64 object-contain rounded"
-                        />
+
+                {/* 입력 모드 전환 탭 */}
+                <div className="flex mb-3 border-b border-gray-200">
+                  <button
+                    type="button"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      inputMode === 'image'
+                        ? 'text-blue-600 border-b-2 border-blue-600'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setInputMode('image')}
+                  >
+                    이미지 업로드
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      inputMode === 'text'
+                        ? 'text-blue-600 border-b-2 border-blue-600'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setInputMode('text')}
+                  >
+                    텍스트 붙여넣기
+                  </button>
+                </div>
+
+                {/* 이미지 업로드 영역 */}
+                {inputMode === 'image' && (
+                  <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                    <div className="space-y-1 text-center">
+                      {imagePreview ? (
+                        <div className="mb-4">
+                          <img
+                            src={imagePreview}
+                            alt="광고 캡처 미리보기"
+                            className="mx-auto h-64 object-contain rounded"
+                          />
+                        </div>
+                      ) : (
+                        <svg
+                          className="mx-auto h-12 w-12 text-gray-400"
+                          stroke="currentColor"
+                          fill="none"
+                          viewBox="0 0 48 48"
+                        >
+                          <path
+                            d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                      <div className="flex text-sm text-gray-600">
+                        <label
+                          htmlFor="file-upload"
+                          className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none"
+                        >
+                          <span>이미지 파일 선택</span>
+                          <input
+                            id="file-upload"
+                            name="file-upload"
+                            type="file"
+                            className="sr-only"
+                            accept="image/*"
+                            onChange={handleFileChange}
+                          />
+                        </label>
+                        <p className="pl-1">또는 여기로 끌어오세요</p>
                       </div>
-                    ) : (
-                      <svg
-                        className="mx-auto h-12 w-12 text-gray-400"
-                        stroke="currentColor"
-                        fill="none"
-                        viewBox="0 0 48 48"
-                      >
-                        <path
-                          d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                    <div className="flex text-sm text-gray-600">
-                      <label
-                        htmlFor="file-upload"
-                        className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none"
-                      >
-                        <span>이미지 파일 선택</span>
-                        <input
-                          id="file-upload"
-                          name="file-upload"
-                          type="file"
-                          className="sr-only"
-                          accept="image/*"
-                          onChange={handleFileChange}
-                        />
-                      </label>
-                      <p className="pl-1">또는 여기로 끌어오세요</p>
+                      <p className="text-xs text-gray-500">
+                        PNG, JPG, GIF 최대 10MB
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-500">
-                      PNG, JPG, GIF 최대 10MB
+                  </div>
+                )}
+
+                {/* 텍스트 입력 영역 */}
+                {inputMode === 'text' && (
+                  <div>
+                    <textarea
+                      value={adText}
+                      onChange={(e) => setAdText(e.target.value)}
+                      placeholder="네이버 광고 검색결과를 복사하여 붙여넣으세요.&#10;&#10;예시:&#10;favicon&#10;AXA손해보험&#10;axa.co.kr&#10;AXA 다이렉트자동차보험 보험료 24시간 간편계산...&#10;광고집행기간&#10;61개월 이상"
+                      className="w-full h-64 p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono resize-y"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      검색 결과 페이지에서 광고 영역을 드래그하여 선택한 후 복사(Ctrl+C)하여 붙여넣기(Ctrl+V) 하세요.
                     </p>
                   </div>
-                </div>
+                )}
               </div>
               
               {error && (
