@@ -643,7 +643,6 @@ interface Step4Props {
   onReanalyze: () => void;
   onSkip: () => void;
   onPrev: () => void;
-  onComplete: () => void;
 }
 
 const Step4AdAnalysis: React.FC<Step4Props> = ({
@@ -660,7 +659,6 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
   onReanalyze,
   onSkip,
   onPrev,
-  onComplete,
 }) => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -848,25 +846,19 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
         </div>
       )}
 
-      <div className="flex justify-between pt-6">
+      <div className="flex justify-start pt-6">
         <button
           onClick={onPrev}
           className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
         >
           ← 이전
         </button>
-        <button
-          onClick={onComplete}
-          className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
-        >
-          분석 완료 →
-        </button>
       </div>
     </div>
   );
 };
 
-// ===== 종합 리포트 컴포넌트 =====
+// ===== 종합 리포트 컴포넌트 (PPT 수준 확장 버전) =====
 interface ReportProps {
   report: IntegratedReportData;
   onBack: () => void;
@@ -875,13 +867,17 @@ interface ReportProps {
 
 const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate }) => {
   const [expandedSections, setExpandedSections] = useState<string[]>([
-    'consumerPerception',
-    'channelAnalysis',
+    'executiveSummary',
+    'perceptionStages',
+    'keywordMap',
+    'channelBreakdown',
     'marketEnvironment',
     'marketingInsights',
-    'actionableStrategies',
+    'actionStrategies',
+    'actionPlan',
     'conclusion',
   ]);
+  const [pptLoading, setPptLoading] = useState(false);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) =>
@@ -893,15 +889,17 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
     id,
     title,
     children,
+    bgColor = 'from-blue-600 to-indigo-600',
   }: {
     id: string;
     title: string;
     children: React.ReactNode;
+    bgColor?: string;
   }) => (
     <div className="bg-white rounded-xl shadow-md overflow-hidden mb-4">
       <button
         onClick={() => toggleSection(id)}
-        className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-left font-semibold flex justify-between items-center"
+        className={`w-full px-6 py-4 bg-gradient-to-r ${bgColor} text-white text-left font-semibold flex justify-between items-center`}
       >
         {title}
         <span className="text-xl">{expandedSections.includes(id) ? '−' : '+'}</span>
@@ -910,165 +908,342 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
     </div>
   );
 
-  const PriorityBadge = ({ priority }: { priority: string }) => (
-    <span
-      className={`px-2 py-1 text-xs font-semibold rounded-full ${
-        priority === 'high'
-          ? 'bg-red-100 text-red-700'
-          : priority === 'medium'
-          ? 'bg-yellow-100 text-yellow-700'
-          : 'bg-green-100 text-green-700'
-      }`}
-    >
-      {priority === 'high' ? '높음' : priority === 'medium' ? '중간' : '낮음'}
-    </span>
-  );
+  // PPT 다운로드 핸들러
+  const handleDownloadPPT = async () => {
+    setPptLoading(true);
+    try {
+      const response = await fetch('/api/generate-ppt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report }),
+      });
+
+      if (!response.ok) throw new Error('PPT 생성 실패');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.keyword}_마케팅분석리포트.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PPT 다운로드 오류:', error);
+      alert('PPT 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setPptLoading(false);
+    }
+  };
 
   return (
     <div>
+      {/* 헤더 */}
       <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold text-gray-800 mb-2">종합 분석 리포트</h2>
+        <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full mb-2">
+          MARKETING INTELLIGENCE REPORT
+        </div>
+        <h2 className="text-3xl font-bold text-gray-800 mb-2">
+          "{report.keyword}" 시장 분석 리포트
+        </h2>
         <p className="text-gray-600">
-          키워드: <span className="font-semibold text-blue-600">{report.keyword}</span>
           {report.companyName && (
-            <>
-              {' '}| 업체: <span className="font-semibold">{report.companyName}</span>
-            </>
+            <span className="font-semibold">{report.companyName} | </span>
           )}
+          생성일시: {new Date(report.generatedAt).toLocaleString('ko-KR')}
         </p>
-        <p className="text-sm text-gray-500 mt-1">생성일시: {new Date(report.generatedAt).toLocaleString('ko-KR')}</p>
       </div>
 
-      {/* 1. 소비자 인식 종합 분석 */}
-      <SectionCard id="consumerPerception" title="1. 소비자 인식 종합 분석">
-        <p className="text-gray-700 mb-4">{report.sections.consumerPerception.overallSentiment}</p>
-        <div className="mb-4">
-          <h4 className="font-medium text-gray-800 mb-2">핵심 인사이트</h4>
-          <ul className="list-disc list-inside space-y-1 text-gray-600">
-            {report.sections.consumerPerception.keyInsights.map((insight, idx) => (
-              <li key={idx}>{insight}</li>
+      {/* 1. Executive Summary */}
+      <SectionCard id="executiveSummary" title="1. Executive Summary" bgColor="from-indigo-600 to-purple-600">
+        <div className="mb-6">
+          <h4 className="font-semibold text-gray-800 mb-4 text-lg">핵심 지표 (Key Metrics)</h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {report.executiveSummary?.keyMetrics?.map((metric, idx) => (
+              <div key={idx} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-indigo-600">{metric.value}</div>
+                <div className="text-sm font-medium text-gray-700 mt-1">{metric.label}</div>
+                <div className="text-xs text-gray-500 mt-1">{metric.description}</div>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-medium text-green-800 mb-2">긍정 키워드</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.sections.consumerPerception.topPositiveKeywords.map((kw, idx) => (
-                <span key={idx} className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">
-                  {kw.keyword}
-                </span>
-              ))}
-            </div>
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
+            <h5 className="font-semibold text-green-800 mb-2">Winning Formula</h5>
+            <p className="text-gray-700 text-sm">{report.executiveSummary?.winningFormula}</p>
           </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-medium text-red-800 mb-2">부정 키워드</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.sections.consumerPerception.topNegativeKeywords.map((kw, idx) => (
-                <span key={idx} className="px-2 py-1 bg-red-100 text-red-700 rounded text-sm">
-                  {kw.keyword}
-                </span>
-              ))}
-            </div>
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+            <h5 className="font-semibold text-blue-800 mb-2">Market Opportunity</h5>
+            <p className="text-gray-700 text-sm">{report.executiveSummary?.marketOpportunity}</p>
           </div>
         </div>
       </SectionCard>
 
-      {/* 2. 채널별 소비자 반응 */}
-      <SectionCard id="channelAnalysis" title="2. 채널별 소비자 반응">
-        <p className="text-gray-700 mb-4">{report.sections.channelAnalysis.summary}</p>
-        <div className="grid md:grid-cols-2 gap-4">
-          {report.sections.channelAnalysis.channels.map((channel, idx) => (
-            <div key={idx} className="border border-gray-200 rounded-lg p-4">
-              <h4 className="font-medium text-gray-800 mb-2">{channel.channelName}</h4>
-              <p className="text-sm text-gray-500 mb-2">분석 콘텐츠: {channel.totalContents}개</p>
-              <div className="flex h-2 rounded-full overflow-hidden bg-gray-200 mb-2">
-                <div className="bg-green-500" style={{ width: `${channel.sentimentBreakdown.positive}%` }} />
-                <div className="bg-gray-400" style={{ width: `${channel.sentimentBreakdown.neutral}%` }} />
-                <div className="bg-red-500" style={{ width: `${channel.sentimentBreakdown.negative}%` }} />
+      {/* 2. 3단계 소비자 인식 구조 */}
+      <SectionCard id="perceptionStages" title="2. 3단계 소비자 인식 구조" bgColor="from-teal-600 to-cyan-600">
+        <div className="grid md:grid-cols-3 gap-4">
+          {/* Stage 1: 인지 */}
+          <div className="bg-gradient-to-b from-teal-50 to-white rounded-xl p-5 border border-teal-200">
+            <div className="flex items-center mb-3">
+              <div className="w-10 h-10 bg-teal-500 text-white rounded-full flex items-center justify-center font-bold mr-3">1</div>
+              <div>
+                <h5 className="font-bold text-teal-800">{report.perceptionStages?.stage1_awareness?.title || '인지 단계'}</h5>
+                <span className="text-xs text-teal-600">AWARENESS</span>
               </div>
-              <div className="text-xs text-gray-500 mb-3">
-                긍정 {channel.sentimentBreakdown.positive}% / 중립 {channel.sentimentBreakdown.neutral}% / 부정{' '}
-                {channel.sentimentBreakdown.negative}%
+            </div>
+            <p className="text-gray-700 text-sm mb-3">{report.perceptionStages?.stage1_awareness?.insight}</p>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {report.perceptionStages?.stage1_awareness?.keywords?.slice(0, 5).map((kw, idx) => (
+                <span key={idx} className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-xs">{kw}</span>
+              ))}
+            </div>
+            <div className="text-xs text-gray-500 mt-2">{report.perceptionStages?.stage1_awareness?.metrics}</div>
+          </div>
+
+          {/* Stage 2: 비교 */}
+          <div className="bg-gradient-to-b from-cyan-50 to-white rounded-xl p-5 border border-cyan-200">
+            <div className="flex items-center mb-3">
+              <div className="w-10 h-10 bg-cyan-500 text-white rounded-full flex items-center justify-center font-bold mr-3">2</div>
+              <div>
+                <h5 className="font-bold text-cyan-800">{report.perceptionStages?.stage2_comparison?.title || '비교 단계'}</h5>
+                <span className="text-xs text-cyan-600">COMPARISON</span>
               </div>
-              <div className="space-y-1">
-                {channel.keyFindings.slice(0, 2).map((finding, fIdx) => (
-                  <p key={fIdx} className="text-sm text-gray-600">
-                    • {finding}
-                  </p>
+            </div>
+            <p className="text-gray-700 text-sm mb-3">{report.perceptionStages?.stage2_comparison?.insight}</p>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {report.perceptionStages?.stage2_comparison?.keywords?.slice(0, 5).map((kw, idx) => (
+                <span key={idx} className="px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded text-xs">{kw}</span>
+              ))}
+            </div>
+            <div className="text-xs text-gray-500 mt-2">{report.perceptionStages?.stage2_comparison?.metrics}</div>
+          </div>
+
+          {/* Stage 3: 전환 */}
+          <div className="bg-gradient-to-b from-blue-50 to-white rounded-xl p-5 border border-blue-200">
+            <div className="flex items-center mb-3">
+              <div className="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold mr-3">3</div>
+              <div>
+                <h5 className="font-bold text-blue-800">{report.perceptionStages?.stage3_conversion?.title || '전환 단계'}</h5>
+                <span className="text-xs text-blue-600">CONVERSION</span>
+              </div>
+            </div>
+            <p className="text-gray-700 text-sm mb-3">{report.perceptionStages?.stage3_conversion?.insight}</p>
+            <div className="mb-2">
+              <span className="text-xs font-medium text-gray-600">Pain Points:</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {report.perceptionStages?.stage3_conversion?.painPoints?.slice(0, 4).map((pp, idx) => (
+                  <span key={idx} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">{pp}</span>
                 ))}
               </div>
             </div>
+            <div className="text-xs text-gray-500 mt-2">{report.perceptionStages?.stage3_conversion?.sentiment}</div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 3. 핵심 키워드 맵 */}
+      <SectionCard id="keywordMap" title="3. 핵심 키워드 맵" bgColor="from-orange-500 to-amber-500">
+        <div className="mb-4 text-center">
+          <span className="text-3xl font-bold text-orange-600">{report.keywordMap?.totalSearchVolume}</span>
+          <span className="text-gray-600 ml-2">총 월간 검색량</span>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Top Keywords */}
+          <div>
+            <h5 className="font-semibold text-gray-800 mb-3">상위 키워드 (빈도순)</h5>
+            <div className="space-y-2">
+              {report.keywordMap?.topKeywords?.slice(0, 10).map((kw, idx) => (
+                <div key={idx} className="flex items-center">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
+                    idx < 3 ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {kw.rank}
+                  </span>
+                  <span className="flex-1 text-sm text-gray-700">{kw.keyword}</span>
+                  <div className="w-24 bg-gray-200 rounded-full h-2 mx-2">
+                    <div
+                      className="bg-orange-500 h-2 rounded-full"
+                      style={{ width: `${(kw.frequency / (report.keywordMap?.topKeywords?.[0]?.frequency || 1)) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500 w-10 text-right">{kw.frequency}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Pain Point Keywords */}
+          <div>
+            <h5 className="font-semibold text-gray-800 mb-3">Pain Point 키워드</h5>
+            <div className="bg-red-50 rounded-lg p-4">
+              <div className="flex flex-wrap gap-2">
+                {report.keywordMap?.painPointKeywords?.map((kw, idx) => (
+                  <span key={idx} className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm">
+                    {kw.keyword} <span className="text-red-500 text-xs">({kw.frequency})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <h5 className="font-semibold text-gray-800 mt-4 mb-3">데이터 인사이트</h5>
+            <ul className="space-y-2">
+              {report.keywordMap?.dataInsights?.map((insight, idx) => (
+                <li key={idx} className="flex items-start text-sm text-gray-700">
+                  <span className="text-orange-500 mr-2">•</span>
+                  {insight}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 4. 채널별 소비자 반응 */}
+      <SectionCard id="channelBreakdown" title="4. 채널별 소비자 반응" bgColor="from-violet-600 to-purple-600">
+        <div className="grid md:grid-cols-2 gap-4">
+          {report.channelBreakdown?.map((channel, idx) => (
+            <div key={idx} className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-3">
+                <h5 className="font-bold text-gray-800">{channel.channelName}</h5>
+                <span className="px-2 py-1 bg-violet-100 text-violet-700 text-xs rounded-full">{channel.channel}</span>
+              </div>
+              <p className="text-sm text-violet-600 font-medium mb-3">{channel.role}</p>
+
+              {channel.sentimentBreakdown && (
+                <div className="mb-3">
+                  <div className="flex h-2 rounded-full overflow-hidden bg-gray-200">
+                    <div className="bg-green-500" style={{ width: `${channel.sentimentBreakdown.positive}%` }} />
+                    <div className="bg-gray-400" style={{ width: `${channel.sentimentBreakdown.neutral}%` }} />
+                    <div className="bg-red-500" style={{ width: `${channel.sentimentBreakdown.negative}%` }} />
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    긍정 {channel.sentimentBreakdown.positive}% / 중립 {channel.sentimentBreakdown.neutral}% / 부정 {channel.sentimentBreakdown.negative}%
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-3">
+                <span className="text-xs font-medium text-gray-600">주요 관심사:</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {channel.keyInterests?.map((interest, iIdx) => (
+                    <span key={iIdx} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{interest}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-violet-50 rounded p-3">
+                <span className="text-xs font-medium text-violet-700">전략:</span>
+                <p className="text-sm text-gray-700 mt-1">{channel.strategy}</p>
+              </div>
+            </div>
           ))}
         </div>
       </SectionCard>
 
-      {/* 3. 시장 환경 분석 */}
-      <SectionCard id="marketEnvironment" title="3. 시장 환경 분석">
-        <div className="grid md:grid-cols-2 gap-6 mb-4">
-          <div>
-            <h4 className="font-medium text-gray-800 mb-2">검색량 트렌드</h4>
-            <p className="text-gray-600">{report.sections.marketEnvironment.searchVolumeTrend}</p>
-          </div>
-          <div>
-            <h4 className="font-medium text-gray-800 mb-2">경쟁 강도</h4>
-            <p className="text-gray-600">{report.sections.marketEnvironment.competitionLevel}</p>
-          </div>
-        </div>
-        <p className="text-gray-700 mb-4">{report.sections.marketEnvironment.competitionAnalysis}</p>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-800 mb-2">기회 요인</h4>
-            <ul className="space-y-1 text-gray-600 text-sm">
-              {report.sections.marketEnvironment.keyOpportunities.map((opp, idx) => (
-                <li key={idx}>• {opp}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <h4 className="font-medium text-orange-800 mb-2">위협 요인</h4>
-            <ul className="space-y-1 text-gray-600 text-sm">
-              {report.sections.marketEnvironment.potentialThreats.map((threat, idx) => (
-                <li key={idx}>• {threat}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </SectionCard>
-
-      {/* 4. 핵심 마케팅 인사이트 */}
-      <SectionCard id="marketingInsights" title="4. 핵심 마케팅 인사이트">
-        <p className="text-gray-700 mb-4">{report.sections.marketingInsights.summary}</p>
-        <div className="bg-indigo-50 p-4 rounded-lg">
-          <ul className="space-y-2">
-            {report.sections.marketingInsights.insights.map((insight, idx) => (
-              <li key={idx} className="flex items-start">
-                <span className="text-indigo-600 mr-2 font-bold">{idx + 1}.</span>
-                <span className="text-gray-700">{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </SectionCard>
-
-      {/* 5. 실행 가능한 마케팅 전략 */}
-      <SectionCard id="actionableStrategies" title="5. 실행 가능한 마케팅 전략">
-        <p className="text-gray-700 mb-4">{report.sections.actionableStrategies.summary}</p>
-        <div className="space-y-4">
-          {report.sections.actionableStrategies.strategies.map((strategy, idx) => (
-            <div key={idx} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium text-gray-800">{strategy.strategy}</h4>
-                <PriorityBadge priority={strategy.priority} />
+      {/* 5. 시장 환경 분석 */}
+      <SectionCard id="marketEnvironment" title="5. 시장 환경 분석" bgColor="from-slate-600 to-gray-700">
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* 경쟁 분석 */}
+          <div className="bg-slate-50 rounded-lg p-5">
+            <h5 className="font-semibold text-slate-800 mb-3">경쟁 구도 분석</h5>
+            <div className="flex items-center mb-3">
+              <span className="text-sm text-gray-600 mr-2">경쟁 강도:</span>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                report.marketEnvironment?.competitionAnalysis?.level === '높음'
+                  ? 'bg-red-100 text-red-700'
+                  : report.marketEnvironment?.competitionAnalysis?.level === '중간'
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : 'bg-green-100 text-green-700'
+              }`}>
+                {report.marketEnvironment?.competitionAnalysis?.level}
+              </span>
+            </div>
+            <p className="text-sm text-gray-700 mb-3">{report.marketEnvironment?.competitionAnalysis?.insight}</p>
+            <div>
+              <span className="text-xs font-medium text-gray-600">주요 플레이어:</span>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {report.marketEnvironment?.competitionAnalysis?.keyPlayers?.map((player, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-slate-200 text-slate-700 rounded text-xs">{player}</span>
+                ))}
               </div>
-              <div className="grid md:grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-500">실행 타임라인:</span>
-                  <p className="text-gray-700">{strategy.timeline}</p>
+            </div>
+          </div>
+
+          {/* 디지털 트렌드 */}
+          <div className="bg-blue-50 rounded-lg p-5">
+            <h5 className="font-semibold text-blue-800 mb-3">디지털 트렌드</h5>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">모바일 비중</span>
+                <span className="font-bold text-blue-600">{report.marketEnvironment?.digitalTrends?.mobileShare}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">콘텐츠 신선도</span>
+                <span className="font-medium text-gray-800">{report.marketEnvironment?.digitalTrends?.contentFreshness}</span>
+              </div>
+              <div>
+                <span className="text-xs font-medium text-gray-600">주요 변화:</span>
+                <ul className="mt-1 space-y-1">
+                  {report.marketEnvironment?.digitalTrends?.orgChanges?.map((change, idx) => (
+                    <li key={idx} className="text-xs text-gray-700 flex items-start">
+                      <span className="text-blue-500 mr-1">→</span>{change}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 6-7. 마케팅 인사이트 (Pain Point → Opportunity) */}
+      <SectionCard id="marketingInsights" title="6. 핵심 마케팅 인사이트" bgColor="from-rose-600 to-pink-600">
+        <div className="space-y-6">
+          {report.marketingInsights?.map((insight, idx) => (
+            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-rose-500 to-pink-500 text-white px-5 py-3">
+                <span className="text-sm opacity-80">Insight #{insight.id}</span>
+                <h5 className="font-bold text-lg">{insight.title}</h5>
+              </div>
+              <div className="p-5">
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  {/* Pain Point */}
+                  <div className="bg-red-50 rounded-lg p-4">
+                    <div className="flex items-center mb-2">
+                      <span className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs mr-2">!</span>
+                      <span className="font-semibold text-red-800">{insight.painPoint?.label}</span>
+                    </div>
+                    <ul className="space-y-1">
+                      {insight.painPoint?.details?.map((detail, dIdx) => (
+                        <li key={dIdx} className="text-sm text-gray-700 flex items-start">
+                          <span className="text-red-400 mr-2">•</span>{detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Opportunity */}
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <div className="flex items-center mb-2">
+                      <span className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs mr-2">★</span>
+                      <span className="font-semibold text-green-800">{insight.opportunity?.label}</span>
+                    </div>
+                    <ul className="space-y-1">
+                      {insight.opportunity?.details?.map((detail, dIdx) => (
+                        <li key={dIdx} className="text-sm text-gray-700 flex items-start">
+                          <span className="text-green-400 mr-2">•</span>{detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-gray-500">예상 성과:</span>
-                  <p className="text-gray-700">{strategy.expectedOutcome}</p>
+
+                <div className="bg-blue-50 rounded-lg p-3 flex items-center">
+                  <span className="text-blue-600 font-bold mr-2">ACTION →</span>
+                  <span className="text-sm text-gray-700">{insight.action}</span>
                 </div>
               </div>
             </div>
@@ -1076,23 +1251,131 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
         </div>
       </SectionCard>
 
-      {/* 6. 종합 결론 */}
-      <SectionCard id="conclusion" title="6. 종합 결론">
-        <p className="text-gray-700 mb-4">{report.sections.conclusion.summary}</p>
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg">
-          <h4 className="font-medium text-gray-800 mb-2">핵심 추천 사항</h4>
-          <ul className="space-y-2">
-            {report.sections.conclusion.recommendations.map((rec, idx) => (
-              <li key={idx} className="flex items-start">
-                <span className="text-blue-600 mr-2">✓</span>
-                <span className="text-gray-700">{rec}</span>
-              </li>
-            ))}
-          </ul>
+      {/* 8-12. 실행 전략 (5개 상세) */}
+      <SectionCard id="actionStrategies" title="7. 실행 전략 (5대 전략)" bgColor="from-emerald-600 to-teal-600">
+        <div className="space-y-4">
+          {report.actionStrategies?.map((strategy, idx) => (
+            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-5 py-3 flex items-center justify-between">
+                <div>
+                  <span className="text-sm opacity-80">Strategy #{strategy.id}</span>
+                  <h5 className="font-bold">{strategy.title}</h5>
+                </div>
+                <span className="text-sm bg-white/20 px-3 py-1 rounded-full">{strategy.subtitle}</span>
+              </div>
+              <div className="p-5">
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  {strategy.sections?.map((section, sIdx) => (
+                    <div key={sIdx} className="bg-gray-50 rounded-lg p-4">
+                      <h6 className="font-semibold text-gray-800 mb-2">{section.heading}</h6>
+                      <ul className="space-y-1">
+                        {section.items?.map((item, iIdx) => (
+                          <li key={iIdx} className="text-sm text-gray-700 flex items-start">
+                            <span className="text-emerald-500 mr-2">✓</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+
+                {strategy.expectedMetrics && strategy.expectedMetrics.length > 0 && (
+                  <div className="bg-emerald-50 rounded-lg p-4">
+                    <span className="text-xs font-medium text-emerald-700 mb-2 block">예상 성과 지표</span>
+                    <div className="flex flex-wrap gap-3">
+                      {strategy.expectedMetrics.map((metric, mIdx) => (
+                        <div key={mIdx} className="bg-white px-3 py-2 rounded-lg shadow-sm">
+                          <div className="text-lg font-bold text-emerald-600">{metric.value}</div>
+                          <div className="text-xs text-gray-600">{metric.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </SectionCard>
 
-      <div className="flex justify-center gap-4 pt-4">
+      {/* 13. 90일 액션플랜 */}
+      <SectionCard id="actionPlan" title="8. 90일 액션플랜" bgColor="from-amber-600 to-orange-600">
+        {/* Key Findings */}
+        <div className="bg-amber-50 rounded-lg p-5 mb-6">
+          <h5 className="font-semibold text-amber-800 mb-3">Key Findings</h5>
+          <div className="grid md:grid-cols-2 gap-2">
+            {report.actionPlan?.keyFindings?.map((finding, idx) => (
+              <div key={idx} className="flex items-start">
+                <span className="w-5 h-5 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs mr-2 flex-shrink-0">
+                  {idx + 1}
+                </span>
+                <span className="text-sm text-gray-700">{finding}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Timeline */}
+        <h5 className="font-semibold text-gray-800 mb-4">실행 타임라인</h5>
+        <div className="relative">
+          <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+          <div className="space-y-4">
+            {report.actionPlan?.timeline?.map((item, idx) => {
+              const phaseColors: Record<string, string> = {
+                'NOW': 'bg-red-500',
+                '30d': 'bg-orange-500',
+                '60d': 'bg-yellow-500',
+                '90d': 'bg-green-500',
+              };
+              const phaseBgColors: Record<string, string> = {
+                'NOW': 'bg-red-50 border-red-200',
+                '30d': 'bg-orange-50 border-orange-200',
+                '60d': 'bg-yellow-50 border-yellow-200',
+                '90d': 'bg-green-50 border-green-200',
+              };
+              return (
+                <div key={idx} className="flex items-start pl-10 relative">
+                  <div className={`absolute left-2 w-5 h-5 rounded-full ${phaseColors[item.phase]} flex items-center justify-center`}>
+                    <div className="w-2 h-2 bg-white rounded-full" />
+                  </div>
+                  <div className={`flex-1 rounded-lg p-4 border ${phaseBgColors[item.phase]}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`px-2 py-0.5 text-xs font-bold rounded ${phaseColors[item.phase]} text-white`}>
+                        {item.phase === 'NOW' ? '즉시' : item.phase}
+                      </span>
+                      <span className="text-xs text-gray-500">{item.category}</span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                    <p className="text-sm text-gray-600 mt-1">{item.action}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 14. 종합 결론 */}
+      <SectionCard id="conclusion" title="9. 종합 결론" bgColor="from-gray-800 to-gray-900">
+        <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-6 mb-4">
+          <p className="text-gray-800 text-lg leading-relaxed">{report.conclusion?.summary}</p>
+        </div>
+
+        <h5 className="font-semibold text-gray-800 mb-3">핵심 추천 사항</h5>
+        <div className="grid md:grid-cols-2 gap-3">
+          {report.conclusion?.recommendations?.map((rec, idx) => (
+            <div key={idx} className="flex items-start bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow">
+              <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full flex items-center justify-center font-bold mr-3 flex-shrink-0">
+                {idx + 1}
+              </span>
+              <span className="text-gray-700">{rec}</span>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* 버튼 영역 */}
+      <div className="flex flex-col sm:flex-row justify-center gap-4 pt-6">
         <button
           onClick={onBack}
           className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
@@ -1101,12 +1384,38 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
         </button>
         <button
           onClick={onRegenerate}
-          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:shadow-lg transition-all flex items-center gap-2"
+          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:shadow-lg transition-all flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           리포트 재생성
+        </button>
+        <button
+          onClick={handleDownloadPPT}
+          disabled={pptLoading}
+          className={`px-6 py-3 font-medium rounded-lg transition-all flex items-center justify-center gap-2 ${
+            pptLoading
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg'
+          }`}
+        >
+          {pptLoading ? (
+            <>
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              PPT 생성 중...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              PPT 다운로드
+            </>
+          )}
         </button>
       </div>
     </div>
@@ -1262,6 +1571,11 @@ export default function IntegratedAnalysisPage() {
   const handleGenerateReport = async () => {
     updateState({ reportLoading: true });
     setError(null);
+
+    // Step 4 완료 처리 (광고 분석 완료 또는 건너뛰기한 경우)
+    if (!completedSteps.includes(4)) {
+      setCompletedSteps((prev) => [...prev, 4]);
+    }
 
     try {
       const requestData = {
@@ -1446,11 +1760,6 @@ export default function IntegratedAnalysisPage() {
                   }
                 }}
                 onPrev={() => goToStep(3)}
-                onComplete={() => {
-                  if (!completedSteps.includes(4)) {
-                    setCompletedSteps((prev) => [...prev, 4]);
-                  }
-                }}
               />
             )}
 

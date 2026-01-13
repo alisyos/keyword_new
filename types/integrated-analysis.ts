@@ -104,53 +104,133 @@ export interface ActionableStrategy {
   expectedOutcome: string;
 }
 
-// 종합 리포트 데이터 구조
+// 종합 리포트 데이터 구조 (PPT 수준 확장 버전)
 export interface IntegratedReportData {
   generatedAt: string;
   keyword: string;
   companyName?: string;
 
-  sections: {
-    // 1. 소비자 인식 종합 분석
-    consumerPerception: {
-      overallSentiment: string;
-      keyInsights: string[];
-      topPositiveKeywords: Array<{ keyword: string; score: number }>;
-      topNegativeKeywords: Array<{ keyword: string; score: number }>;
-    };
+  // 1. Executive Summary (핵심 요약)
+  executiveSummary: {
+    keyMetrics: Array<{
+      label: string;
+      value: string;
+      description: string;
+    }>;
+    winningFormula: string;
+    marketOpportunity: string;
+  };
 
-    // 2. 채널별 소비자 반응
-    channelAnalysis: {
-      summary: string;
-      channels: ChannelSummary[];
+  // 2. 3단계 소비자 인식 구조
+  perceptionStages: {
+    stage1_awareness: {
+      title: string;
+      insight: string;
+      keywords: string[];
+      metrics: string;
     };
+    stage2_comparison: {
+      title: string;
+      insight: string;
+      keywords: string[];
+      metrics: string;
+    };
+    stage3_conversion: {
+      title: string;
+      insight: string;
+      painPoints: string[];
+      sentiment: string;
+    };
+  };
 
-    // 3. 시장 환경 분석
-    marketEnvironment: {
-      searchVolumeTrend: string;
-      competitionLevel: string;
-      competitionAnalysis: string;
-      keyOpportunities: string[];
-      potentialThreats: string[];
-    };
+  // 3. 핵심 키워드 맵
+  keywordMap: {
+    totalSearchVolume: string;
+    topKeywords: Array<{
+      rank: number;
+      keyword: string;
+      frequency: number;
+    }>;
+    painPointKeywords: Array<{
+      keyword: string;
+      frequency: number;
+    }>;
+    dataInsights: string[];
+  };
 
-    // 4. 핵심 마케팅 인사이트
-    marketingInsights: {
-      summary: string;
-      insights: string[];
+  // 4. 채널별 소비자 반응
+  channelBreakdown: Array<{
+    channel: string;
+    channelName: string;
+    role: string;
+    keyInterests: string[];
+    strategy: string;
+    sentimentBreakdown?: {
+      positive: number;
+      negative: number;
+      neutral: number;
     };
+  }>;
 
-    // 5. 실행 가능한 마케팅 전략
-    actionableStrategies: {
-      summary: string;
-      strategies: ActionableStrategy[];
+  // 5. 시장 환경 분석
+  marketEnvironment: {
+    competitionAnalysis: {
+      level: string;
+      insight: string;
+      keyPlayers: string[];
     };
+    digitalTrends: {
+      mobileShare: string;
+      contentFreshness: string;
+      orgChanges: string[];
+    };
+  };
 
-    // 6. 종합 결론
-    conclusion: {
-      summary: string;
-      recommendations: string[];
+  // 6-7. 마케팅 인사이트 (Pain Point → Opportunity 구조)
+  marketingInsights: Array<{
+    id: number;
+    title: string;
+    painPoint: {
+      label: string;
+      details: string[];
     };
+    opportunity: {
+      label: string;
+      details: string[];
+    };
+    action: string;
+  }>;
+
+  // 8-12. 실행 전략 (5개 상세)
+  actionStrategies: Array<{
+    id: number;
+    title: string;
+    subtitle: string;
+    sections: Array<{
+      heading: string;
+      items: string[];
+    }>;
+    expectedMetrics?: Array<{
+      label: string;
+      value: string;
+    }>;
+  }>;
+
+  // 13. 90일 액션플랜
+  actionPlan: {
+    keyFindings: string[];
+    timeline: Array<{
+      phase: 'NOW' | '30d' | '60d' | '90d';
+      label: string;
+      category: string;
+      action: string;
+    }>;
+  };
+
+  // 14. 종합 결론
+  conclusion: {
+    summary: string;
+    recommendations: string[];
   };
 }
 

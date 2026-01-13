@@ -6,7 +6,6 @@ import {
   KeywordExpansionResult,
   KeywordAnalysisResult,
   AdAnalysisResult,
-  ChannelSummary,
   ContentType,
   channelNames,
 } from '../../types/integrated-analysis';
@@ -45,13 +44,36 @@ export default async function handler(
     const dataSummary = buildDataSummary(keyword, keywordExpansion, contentAnalysis, adAnalysis);
 
     // GPT를 사용하여 종합 리포트 생성
-    const report = await generateIntegratedReport(keyword, companyName, dataSummary);
+    const report = await generateIntegratedReport(keyword, companyName, dataSummary, keywordExpansion, contentAnalysis);
 
     res.status(200).json({ report });
   } catch (error) {
     console.error('종합 리포트 생성 오류:', error);
     res.status(500).json({ error: '종합 리포트 생성 중 오류가 발생했습니다.' });
   }
+}
+
+// 총 검색량 계산
+function calculateTotalSearchVolume(keywordExpansion: KeywordExpansionResult): number {
+  if (!keywordExpansion.keywordList) return 0;
+  return keywordExpansion.keywordList.reduce((sum, kw) => {
+    const pc = kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0;
+    const mobile = kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0;
+    return sum + pc + mobile;
+  }, 0);
+}
+
+// 모바일 비중 계산
+function calculateMobileShare(keywordExpansion: KeywordExpansionResult): number {
+  if (!keywordExpansion.keywordList) return 0;
+  let totalPc = 0;
+  let totalMobile = 0;
+  keywordExpansion.keywordList.forEach(kw => {
+    totalPc += kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0;
+    totalMobile += kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0;
+  });
+  const total = totalPc + totalMobile;
+  return total > 0 ? Math.round((totalMobile / total) * 100) : 0;
 }
 
 // 분석 데이터 요약 생성
@@ -66,12 +88,21 @@ function buildDataSummary(
   // 키워드 확장 데이터 요약
   summary += '## 키워드 확장 분석 데이터\n\n';
   if (keywordExpansion.keywordList && keywordExpansion.keywordList.length > 0) {
-    const topKeywords = keywordExpansion.keywordList.slice(0, 15);
+    const totalVolume = calculateTotalSearchVolume(keywordExpansion);
+    const mobileShare = calculateMobileShare(keywordExpansion);
+
+    summary += `### 검색량 개요\n`;
+    summary += `- 총 월간 검색량: ${totalVolume.toLocaleString()}건\n`;
+    summary += `- 모바일 비중: ${mobileShare}%\n`;
+    summary += `- 분석된 연관 키워드 수: ${keywordExpansion.keywordList.length}개\n\n`;
+
+    const topKeywords = keywordExpansion.keywordList.slice(0, 20);
     summary += '### 상위 연관 키워드 (검색량 기준)\n';
     topKeywords.forEach((kw, idx) => {
       const pcVol = kw.monthlyPcQcCnt === '< 10' ? '10 미만' : parseInt(kw.monthlyPcQcCnt).toLocaleString();
       const mobileVol = kw.monthlyMobileQcCnt === '< 10' ? '10 미만' : parseInt(kw.monthlyMobileQcCnt).toLocaleString();
-      summary += `${idx + 1}. ${kw.relKeyword} - PC: ${pcVol}, 모바일: ${mobileVol}, 경쟁도: ${kw.compIdx}\n`;
+      const ctr = kw.monthlyAveMobileCtr !== '< 10' ? `${parseFloat(kw.monthlyAveMobileCtr).toFixed(1)}%` : '-';
+      summary += `${idx + 1}. ${kw.relKeyword} - PC: ${pcVol}, 모바일: ${mobileVol}, CTR: ${ctr}, 경쟁도: ${kw.compIdx}\n`;
     });
 
     // 경쟁도 분포
@@ -79,35 +110,44 @@ function buildDataSummary(
     const midComp = keywordExpansion.keywordList.filter(k => k.compIdx === '중간').length;
     const lowComp = keywordExpansion.keywordList.filter(k => k.compIdx === '낮음').length;
     summary += `\n### 경쟁도 분포\n`;
-    summary += `- 높음: ${highComp}개 키워드\n`;
-    summary += `- 중간: ${midComp}개 키워드\n`;
-    summary += `- 낮음: ${lowComp}개 키워드\n`;
+    summary += `- 높음: ${highComp}개 키워드 (${Math.round(highComp / keywordExpansion.keywordList.length * 100)}%)\n`;
+    summary += `- 중간: ${midComp}개 키워드 (${Math.round(midComp / keywordExpansion.keywordList.length * 100)}%)\n`;
+    summary += `- 낮음: ${lowComp}개 키워드 (${Math.round(lowComp / keywordExpansion.keywordList.length * 100)}%)\n`;
   }
 
   // 콘텐츠 분석 데이터 요약
   summary += '\n## 채널별 콘텐츠 분석 데이터\n\n';
 
   const channels: ContentType[] = ['blog', 'cafe', 'youtube', 'news'];
+  let totalPositive = 0;
+  let totalNegative = 0;
+  let totalNeutral = 0;
+  let channelCount = 0;
+
   channels.forEach(channel => {
     const data = contentAnalysis[channel];
     if (data) {
+      channelCount++;
       summary += `### ${channelNames[channel]}\n`;
 
       // 감성 분석
       if (data.sentiment) {
+        totalPositive += data.sentiment.positive;
+        totalNegative += data.sentiment.negative;
+        totalNeutral += data.sentiment.neutral;
         summary += `- 감성 분석: 긍정 ${data.sentiment.positive}%, 중립 ${data.sentiment.neutral}%, 부정 ${data.sentiment.negative}%\n`;
 
         if (data.sentiment.positiveKeywords && data.sentiment.positiveKeywords.length > 0) {
-          summary += `- 긍정 키워드: ${data.sentiment.positiveKeywords.slice(0, 5).map(k => k.keyword).join(', ')}\n`;
+          summary += `- 긍정 키워드: ${data.sentiment.positiveKeywords.slice(0, 5).map(k => `${k.keyword}(${k.score})`).join(', ')}\n`;
         }
         if (data.sentiment.negativeKeywords && data.sentiment.negativeKeywords.length > 0) {
-          summary += `- 부정 키워드: ${data.sentiment.negativeKeywords.slice(0, 5).map(k => k.keyword).join(', ')}\n`;
+          summary += `- 부정 키워드: ${data.sentiment.negativeKeywords.slice(0, 5).map(k => `${k.keyword}(${k.score})`).join(', ')}\n`;
         }
       }
 
       // 주요 키워드
       if (data.keywords && data.keywords.length > 0) {
-        summary += `- 주요 키워드: ${data.keywords.slice(0, 8).map(k => `${k.keyword}(${k.frequency})`).join(', ')}\n`;
+        summary += `- 주요 키워드 (빈도순): ${data.keywords.slice(0, 10).map(k => `${k.keyword}(${k.frequency})`).join(', ')}\n`;
       }
 
       // 콘텐츠 수
@@ -118,6 +158,14 @@ function buildDataSummary(
       summary += '\n';
     }
   });
+
+  // 전체 감성 평균
+  if (channelCount > 0) {
+    summary += `### 전체 채널 감성 평균\n`;
+    summary += `- 긍정: ${Math.round(totalPositive / channelCount)}%\n`;
+    summary += `- 중립: ${Math.round(totalNeutral / channelCount)}%\n`;
+    summary += `- 부정: ${Math.round(totalNegative / channelCount)}%\n\n`;
+  }
 
   // 광고 분석 데이터 요약
   if (adAnalysis) {
@@ -145,93 +193,189 @@ function buildDataSummary(
 async function generateIntegratedReport(
   keyword: string,
   companyName: string | undefined,
-  dataSummary: string
+  dataSummary: string,
+  keywordExpansion: KeywordExpansionResult,
+  contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult }
 ): Promise<IntegratedReportData> {
-  const systemPrompt = `당신은 디지털 마케팅 전략 전문가입니다. 제공된 키워드 분석 데이터를 바탕으로 종합적인 마케팅 리포트를 생성해주세요.
 
-리포트는 다음 6개 섹션으로 구성되어야 합니다:
+  const totalVolume = calculateTotalSearchVolume(keywordExpansion);
+  const mobileShare = calculateMobileShare(keywordExpansion);
 
-1. 소비자 인식 종합 분석 (consumerPerception)
-   - 전반적인 감정 분석 결과 요약
-   - 핵심 인사이트 도출 (3-5개)
-   - 긍정/부정 키워드 분석
+  const systemPrompt = `당신은 디지털 마케팅 전략 컨설턴트입니다. 제공된 키워드 분석 데이터를 바탕으로 PPT 수준의 전문적인 마케팅 인텔리전스 리포트를 생성해주세요.
 
-2. 채널별 소비자 반응 (channelAnalysis)
-   - 전체 요약
-   - 각 채널별 특성과 주요 발견 사항
+리포트는 다음 구조로 작성해야 합니다:
 
-3. 시장 환경 분석 (marketEnvironment)
-   - 검색량 트렌드 분석
-   - 경쟁 강도 평가
-   - 기회 요인 및 위협 요인
+1. **Executive Summary** (핵심 요약)
+   - 5개의 핵심 지표 (구체적 수치 포함)
+   - 승리 공식 (Winning Formula) - 성공을 위한 핵심 전략 한 문장
+   - 시장 기회 요약
 
-4. 핵심 마케팅 인사이트 (marketingInsights)
+2. **3단계 소비자 인식 구조**
+   - Stage 1 (개념 이해): 소비자가 키워드를 어떻게 인식하는지
+   - Stage 2 (적극 비교): 구매 의사결정을 위한 비교 행동
+   - Stage 3 (전환 장벽): 구매를 막는 Pain Points
+
+3. **핵심 키워드 맵**
+   - 상위 키워드 랭킹 (빈도 기반)
+   - Pain Point 키워드 분리
+   - 데이터 기반 인사이트 3개
+
+4. **채널별 소비자 반응**
+   - 각 채널의 역할 정의
+   - 채널별 핵심 관심사
+   - 채널별 마케팅 전략
+
+5. **시장 환경 분석**
+   - 경쟁 구도 분석
+   - 디지털 트렌드 (모바일 비중, 콘텐츠 동향)
+
+6. **마케팅 인사이트** (4개)
+   - 각 인사이트는 Pain Point → Opportunity → Action 구조
+
+7. **실행 전략** (5개)
+   - 전략 1: 콘텐츠 마케팅 (SEO)
+   - 전략 2: 모바일 퍼널 최적화
+   - 전략 3: 차별화된 비교 경험
+   - 전략 4: 검색 광고 최적화
+   - 전략 5: 프로모션 설계
+
+8. **90일 액션플랜**
+   - Key Findings (4개)
+   - 타임라인: NOW → 30일 → 60일 → 90일
+
+9. **종합 결론**
    - 요약
-   - 주요 인사이트 (4-6개)
+   - 핵심 추천사항
 
-5. 실행 가능한 마케팅 전략 (actionableStrategies)
-   - 요약
-   - 우선순위별 전략 제안 (3-5개)
-   - 각 전략별 타임라인과 예상 성과
-
-6. 종합 결론 (conclusion)
-   - 전체 요약
-   - 핵심 추천 사항 (3-5개)
-
-응답은 반드시 아래 JSON 형식으로 제공해주세요. 모든 텍스트는 한국어로 작성하세요.`;
+응답은 반드시 아래 JSON 형식으로 제공해주세요. 모든 텍스트는 한국어로, 전문적이고 구체적으로 작성하세요. 수치는 제공된 데이터를 기반으로 정확하게 인용하세요.`;
 
   const userPrompt = `다음은 "${keyword}" 키워드에 대한 분석 데이터입니다.${companyName ? ` (분석 대상 업체: ${companyName})` : ''}
 
+=== 핵심 수치 ===
+- 총 월간 검색량: ${totalVolume.toLocaleString()}건
+- 모바일 비중: ${mobileShare}%
+- 분석된 연관 키워드: ${keywordExpansion.keywordList?.length || 0}개
+
 ${dataSummary}
 
-위 데이터를 바탕으로 종합 마케팅 리포트를 JSON 형식으로 생성해주세요.
+위 데이터를 바탕으로 PPT 수준의 종합 마케팅 리포트를 JSON 형식으로 생성해주세요.
 
 JSON 구조:
 {
-  "consumerPerception": {
-    "overallSentiment": "전반적인 소비자 인식 요약 (2-3문장)",
-    "keyInsights": ["인사이트1", "인사이트2", "인사이트3"],
-    "topPositiveKeywords": [{"keyword": "키워드", "score": 8}],
-    "topNegativeKeywords": [{"keyword": "키워드", "score": 6}]
+  "executiveSummary": {
+    "keyMetrics": [
+      {"label": "월 핵심 키워드 검색량", "value": "${totalVolume.toLocaleString()}", "description": "시장 성숙도 입증"},
+      {"label": "지표명", "value": "수치", "description": "의미"}
+    ],
+    "winningFormula": "성공을 위한 핵심 전략 (예: '비교 경험 단순화 + 모바일 퍼널 최적화')",
+    "marketOpportunity": "시장 기회 요약 (2-3문장)"
   },
-  "channelAnalysis": {
-    "summary": "채널 분석 전체 요약",
-    "channels": [
-      {
-        "channel": "blog",
-        "channelName": "블로그",
-        "totalContents": 30,
-        "sentimentBreakdown": {"positive": 60, "negative": 15, "neutral": 25},
-        "topKeywords": ["키워드1", "키워드2"],
-        "keyFindings": ["발견1", "발견2"]
-      }
+  "perceptionStages": {
+    "stage1_awareness": {
+      "title": "개념 이해",
+      "insight": "소비자의 기본 인식 설명",
+      "keywords": ["관련 키워드1", "관련 키워드2"],
+      "metrics": "관련 수치 (예: 월 검색량 30,000건)"
+    },
+    "stage2_comparison": {
+      "title": "적극적 비교",
+      "insight": "비교 행동 패턴 설명",
+      "keywords": ["비교", "견적"],
+      "metrics": "CTR 등 관련 수치"
+    },
+    "stage3_conversion": {
+      "title": "전환 장벽",
+      "insight": "구매를 막는 요인",
+      "painPoints": ["복잡함", "고민"],
+      "sentiment": "긍정 67% 등 감성 분석 결과"
+    }
+  },
+  "keywordMap": {
+    "totalSearchVolume": "${totalVolume.toLocaleString()}건",
+    "topKeywords": [
+      {"rank": 1, "keyword": "키워드", "frequency": 54}
+    ],
+    "painPointKeywords": [
+      {"keyword": "복잡", "frequency": 5}
+    ],
+    "dataInsights": [
+      "가격 vs 보장의 균형 - 인사이트 설명",
+      "편의성 수요 급증 - 인사이트 설명",
+      "구매 직전 의도 포착 - 인사이트 설명"
     ]
   },
+  "channelBreakdown": [
+    {
+      "channel": "blog",
+      "channelName": "블로그",
+      "role": "정보 탐색 중심",
+      "keyInterests": ["실용 정보 선호", "할인 팁"],
+      "strategy": "5분 완성 가이드 등 실용형 콘텐츠 배포",
+      "sentimentBreakdown": {"positive": 60, "negative": 15, "neutral": 25}
+    }
+  ],
   "marketEnvironment": {
-    "searchVolumeTrend": "검색량 트렌드 분석",
-    "competitionLevel": "경쟁 강도 평가",
-    "competitionAnalysis": "경쟁 환경 상세 분석",
-    "keyOpportunities": ["기회1", "기회2"],
-    "potentialThreats": ["위협1", "위협2"]
+    "competitionAnalysis": {
+      "level": "높음",
+      "insight": "경쟁 구도 상세 분석",
+      "keyPlayers": ["주요 경쟁사1", "주요 경쟁사2"]
+    },
+    "digitalTrends": {
+      "mobileShare": "${mobileShare}%",
+      "contentFreshness": "최근 3개월 내 콘텐츠 비중",
+      "orgChanges": ["디지털 채널 강화 트렌드"]
+    }
   },
-  "marketingInsights": {
-    "summary": "마케팅 인사이트 요약",
-    "insights": ["인사이트1", "인사이트2", "인사이트3", "인사이트4"]
-  },
-  "actionableStrategies": {
-    "summary": "전략 요약",
-    "strategies": [
-      {
-        "strategy": "전략 이름",
-        "priority": "high",
-        "timeline": "실행 기간",
-        "expectedOutcome": "예상 성과"
-      }
+  "marketingInsights": [
+    {
+      "id": 1,
+      "title": "인사이트 제목",
+      "painPoint": {
+        "label": "Pain Point 요약",
+        "details": ["상세 내용1", "상세 내용2"]
+      },
+      "opportunity": {
+        "label": "Opportunity 요약",
+        "details": ["상세 내용1", "상세 내용2"]
+      },
+      "action": "실행 권고 사항"
+    }
+  ],
+  "actionStrategies": [
+    {
+      "id": 1,
+      "title": "콘텐츠 마케팅",
+      "subtitle": "SEO 기반 타겟 키워드 전략",
+      "sections": [
+        {"heading": "핵심 키워드 군", "items": ["키워드1", "키워드2"]},
+        {"heading": "틈새 키워드", "items": ["롱테일 키워드1"]}
+      ],
+      "expectedMetrics": [
+        {"label": "예상 CTR", "value": "35%"}
+      ]
+    }
+  ],
+  "actionPlan": {
+    "keyFindings": [
+      "비교 경험의 단순화가 핵심",
+      "모바일 퍼널 최적화 필수",
+      "브랜드 신뢰 × 투명 비교 공존",
+      "합리적 가치 제안 중요"
+    ],
+    "timeline": [
+      {"phase": "NOW", "label": "퍼널 지표 개선 착수", "category": "URGENT", "action": "이탈 마찰 요소 즉시 제거"},
+      {"phase": "30d", "label": "핵심 기능 MVP 론치", "category": "DEVELOP", "action": "AI 추천 로직 베타 오픈"},
+      {"phase": "60d", "label": "SEO 더블트랙 운영", "category": "MARKETING", "action": "대표 + 틈새 키워드 콘텐츠 배포"},
+      {"phase": "90d", "label": "시즌 캠페인 확대", "category": "SCALE-UP", "action": "데이터 기반 메시지로 집중 공략"}
     ]
   },
   "conclusion": {
-    "summary": "종합 결론 요약",
-    "recommendations": ["추천1", "추천2", "추천3"]
+    "summary": "종합 결론 요약 (2-3문장)",
+    "recommendations": [
+      "핵심 추천사항 1",
+      "핵심 추천사항 2",
+      "핵심 추천사항 3"
+    ]
   }
 }`;
 
@@ -243,7 +387,7 @@ JSON 구조:
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 4000,
+      max_tokens: 8000,
       response_format: { type: 'json_object' },
     });
 
@@ -257,41 +401,55 @@ JSON 구조:
         generatedAt: new Date().toISOString(),
         keyword,
         companyName,
-        sections: {
-          consumerPerception: {
-            overallSentiment: parsedResponse.consumerPerception?.overallSentiment || '분석 데이터가 충분하지 않습니다.',
-            keyInsights: parsedResponse.consumerPerception?.keyInsights || [],
-            topPositiveKeywords: parsedResponse.consumerPerception?.topPositiveKeywords || [],
-            topNegativeKeywords: parsedResponse.consumerPerception?.topNegativeKeywords || [],
+
+        executiveSummary: {
+          keyMetrics: parsedResponse.executiveSummary?.keyMetrics || [],
+          winningFormula: parsedResponse.executiveSummary?.winningFormula || '',
+          marketOpportunity: parsedResponse.executiveSummary?.marketOpportunity || '',
+        },
+
+        perceptionStages: {
+          stage1_awareness: parsedResponse.perceptionStages?.stage1_awareness || {
+            title: '개념 이해', insight: '', keywords: [], metrics: ''
           },
-          channelAnalysis: {
-            summary: parsedResponse.channelAnalysis?.summary || '채널 분석 데이터가 충분하지 않습니다.',
-            channels: parsedResponse.channelAnalysis?.channels || [],
+          stage2_comparison: parsedResponse.perceptionStages?.stage2_comparison || {
+            title: '적극적 비교', insight: '', keywords: [], metrics: ''
           },
-          marketEnvironment: {
-            searchVolumeTrend: parsedResponse.marketEnvironment?.searchVolumeTrend || '데이터 부족',
-            competitionLevel: parsedResponse.marketEnvironment?.competitionLevel || '데이터 부족',
-            competitionAnalysis: parsedResponse.marketEnvironment?.competitionAnalysis || '',
-            keyOpportunities: parsedResponse.marketEnvironment?.keyOpportunities || [],
-            potentialThreats: parsedResponse.marketEnvironment?.potentialThreats || [],
+          stage3_conversion: parsedResponse.perceptionStages?.stage3_conversion || {
+            title: '전환 장벽', insight: '', painPoints: [], sentiment: ''
           },
-          marketingInsights: {
-            summary: parsedResponse.marketingInsights?.summary || '',
-            insights: parsedResponse.marketingInsights?.insights || [],
+        },
+
+        keywordMap: {
+          totalSearchVolume: parsedResponse.keywordMap?.totalSearchVolume || `${totalVolume.toLocaleString()}건`,
+          topKeywords: parsedResponse.keywordMap?.topKeywords || [],
+          painPointKeywords: parsedResponse.keywordMap?.painPointKeywords || [],
+          dataInsights: parsedResponse.keywordMap?.dataInsights || [],
+        },
+
+        channelBreakdown: parsedResponse.channelBreakdown || [],
+
+        marketEnvironment: {
+          competitionAnalysis: parsedResponse.marketEnvironment?.competitionAnalysis || {
+            level: '분석 중', insight: '', keyPlayers: []
           },
-          actionableStrategies: {
-            summary: parsedResponse.actionableStrategies?.summary || '',
-            strategies: (parsedResponse.actionableStrategies?.strategies || []).map((s: any) => ({
-              strategy: s.strategy || '',
-              priority: s.priority || 'medium',
-              timeline: s.timeline || '',
-              expectedOutcome: s.expectedOutcome || '',
-            })),
+          digitalTrends: parsedResponse.marketEnvironment?.digitalTrends || {
+            mobileShare: `${mobileShare}%`, contentFreshness: '', orgChanges: []
           },
-          conclusion: {
-            summary: parsedResponse.conclusion?.summary || '',
-            recommendations: parsedResponse.conclusion?.recommendations || [],
-          },
+        },
+
+        marketingInsights: parsedResponse.marketingInsights || [],
+
+        actionStrategies: parsedResponse.actionStrategies || [],
+
+        actionPlan: {
+          keyFindings: parsedResponse.actionPlan?.keyFindings || [],
+          timeline: parsedResponse.actionPlan?.timeline || [],
+        },
+
+        conclusion: {
+          summary: parsedResponse.conclusion?.summary || '',
+          recommendations: parsedResponse.conclusion?.recommendations || [],
         },
       };
 
