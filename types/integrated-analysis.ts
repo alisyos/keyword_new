@@ -52,6 +52,15 @@ export interface KeywordExpansionResult {
   keywordList: KeywordExpansionData[];
 }
 
+// 키워드 확장 GPT 분석 결과 (간소화)
+export interface KeywordExpansionGPTAnalysis {
+  searchVolumeAnalysis: string;      // 1. 검색량(수요) 분석
+  engagementAnalysis: string;        // 2. 클릭수 및 클릭율 분석
+  competitionAnalysis: string;       // 3. 경쟁강도 분석
+  consumerTrendAnalysis: string;     // 4. 소비자 인식 및 행동 트렌드
+  conclusion: string;                // 5. 결론 및 마케팅 시사점
+}
+
 // 광고 분석 관련 타입
 export interface AdAnalysisResult {
   ourAd: {
@@ -243,6 +252,8 @@ export interface IntegratedAnalysisState {
   // Step 2: 키워드 확장
   keywordExpansion: KeywordExpansionResult | null;
   keywordExpansionLoading: boolean;
+  keywordExpansionGPTAnalysis: KeywordExpansionGPTAnalysis | null;
+  keywordExpansionGPTLoading: boolean;
 
   // Step 3: 콘텐츠 분석 (채널별)
   contentAnalysis: {
@@ -291,6 +302,8 @@ export const initialAnalysisState: IntegratedAnalysisState = {
   companyName: '',
   keywordExpansion: null,
   keywordExpansionLoading: false,
+  keywordExpansionGPTAnalysis: null,
+  keywordExpansionGPTLoading: false,
   contentAnalysis: {
     blog: null,
     cafe: null,
@@ -303,7 +316,7 @@ export const initialAnalysisState: IntegratedAnalysisState = {
     youtube: false,
     news: false,
   },
-  selectedChannels: ['blog', 'youtube'],
+  selectedChannels: ['blog', 'cafe', 'youtube', 'news'],
   adAnalysis: null,
   adAnalysisLoading: false,
   skipAdAnalysis: false,

@@ -6,6 +6,7 @@ import {
   IntegratedReportData,
   KeywordExpansionResult,
   KeywordExpansionData,
+  KeywordExpansionGPTAnalysis,
   KeywordAnalysisResult,
   AdAnalysisResult,
   ContentType,
@@ -14,6 +15,24 @@ import {
   channelNames,
   stepInfo,
 } from '../types/integrated-analysis';
+
+// ===== 로딩 모달 컴포넌트 =====
+interface LoadingModalProps {
+  isOpen: boolean;
+  message: string;
+}
+
+const LoadingModal: React.FC<LoadingModalProps> = ({ isOpen, message }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 shadow-xl flex flex-col items-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+        <p className="text-gray-700 font-medium">{message}</p>
+      </div>
+    </div>
+  );
+};
 
 // ===== 단계 표시기 컴포넌트 =====
 interface StepIndicatorProps {
@@ -173,7 +192,9 @@ const Step1KeywordInput: React.FC<Step1Props> = ({
 interface Step2Props {
   keyword: string;
   keywordExpansion: KeywordExpansionResult | null;
+  keywordExpansionGPTAnalysis: KeywordExpansionGPTAnalysis | null;
   loading: boolean;
+  gptLoading: boolean;
   onAnalyze: () => void;
   onReanalyze: () => void;
   onPrev: () => void;
@@ -183,7 +204,9 @@ interface Step2Props {
 const Step2KeywordExpansion: React.FC<Step2Props> = ({
   keyword,
   keywordExpansion,
+  keywordExpansionGPTAnalysis,
   loading,
+  gptLoading,
   onAnalyze,
   onReanalyze,
   onPrev,
@@ -193,6 +216,7 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
     key: '',
     direction: null,
   });
+  const [showAllKeywords, setShowAllKeywords] = useState(false);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
@@ -257,13 +281,6 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
         </div>
       )}
 
-      {loading && (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <p className="text-gray-600">연관 키워드를 분석 중입니다...</p>
-        </div>
-      )}
-
       {keywordExpansion && !loading && (
         <>
           <div className="flex justify-end mb-4">
@@ -276,6 +293,58 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
               </svg>
               다시 분석
             </button>
+          </div>
+
+          {/* GPT 분석 결과 - 테이블 위 (간소화) */}
+          {keywordExpansionGPTAnalysis && !gptLoading && (
+            <div className="mb-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 p-4">
+              <h3 className="text-sm font-bold text-indigo-800 flex items-center mb-3">
+                <span className="w-6 h-6 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xs mr-2">
+                  AI
+                </span>
+                키워드 확장 AI 분석
+              </h3>
+              <div className="space-y-3">
+                <div className="bg-white rounded-lg p-3 border-l-4 border-blue-500">
+                  <div className="text-xs font-semibold text-blue-700 mb-1">1. 검색량(수요) 분석</div>
+                  <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.searchVolumeAnalysis}</p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border-l-4 border-green-500">
+                  <div className="text-xs font-semibold text-green-700 mb-1">2. 클릭수 및 클릭율 분석</div>
+                  <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.engagementAnalysis}</p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border-l-4 border-orange-500">
+                  <div className="text-xs font-semibold text-orange-700 mb-1">3. 경쟁강도 분석</div>
+                  <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.competitionAnalysis}</p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border-l-4 border-violet-500">
+                  <div className="text-xs font-semibold text-violet-700 mb-1">4. 소비자 인식 및 행동 트렌드</div>
+                  <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.consumerTrendAnalysis}</p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border-l-4 border-gray-700">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">5. 결론 및 마케팅 시사점</div>
+                  <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.conclusion}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 키워드 테이블 */}
+          <div className="mb-3 flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-gray-700">
+              확장 키워드 리스트 ({Math.min(20, keywordExpansion.keywordList.length)} / {keywordExpansion.keywordList.length}개)
+            </h3>
+            {keywordExpansion.keywordList.length > 20 && (
+              <button
+                onClick={() => setShowAllKeywords(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+              >
+                전체보기
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+            )}
           </div>
           <div className="overflow-x-auto">
           <table className="min-w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -343,12 +412,78 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
               ))}
             </tbody>
           </table>
-          {keywordExpansion.keywordList.length > 20 && (
-            <p className="text-sm text-gray-500 mt-2 text-center">
-              상위 20개 키워드를 표시합니다. (총 {keywordExpansion.keywordList.length}개)
-            </p>
-          )}
         </div>
+
+          {/* 전체 키워드 팝업 */}
+          {showAllKeywords && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col m-4">
+                <div className="flex justify-between items-center px-6 py-4 border-b">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    확장 키워드 전체 리스트 ({keywordExpansion.keywordList.length}개)
+                  </h3>
+                  <button
+                    onClick={() => setShowAllKeywords(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="overflow-auto flex-1 p-4">
+                  <table className="min-w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">키워드</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">PC검색량</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">모바일검색량</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">PC CTR</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">모바일 CTR</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">경쟁도</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {getSortedList().map((item, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 text-sm font-medium text-gray-900">{item.relKeyword}</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">{formatNumber(item.monthlyPcQcCnt)}</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">{formatNumber(item.monthlyMobileQcCnt)}</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">
+                            {item.monthlyAvePcCtr === '< 10' ? '-' : `${parseFloat(item.monthlyAvePcCtr).toFixed(2)}%`}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">
+                            {item.monthlyAveMobileCtr === '< 10' ? '-' : `${parseFloat(item.monthlyAveMobileCtr).toFixed(2)}%`}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <span
+                              className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                item.compIdx === '높음'
+                                  ? 'bg-red-100 text-red-700'
+                                  : item.compIdx === '중간'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {item.compIdx}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-6 py-4 border-t text-right">
+                  <button
+                    onClick={() => setShowAllKeywords(false)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -459,30 +594,6 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
         </div>
       )}
 
-      {/* 로딩 상태 */}
-      {isAnyLoading && (
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <p className="text-gray-600">채널별 콘텐츠를 분석 중입니다...</p>
-          <div className="mt-4 flex gap-4">
-            {selectedChannels.map((channel) => (
-              <span
-                key={channel}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  contentAnalysisLoading[channel]
-                    ? 'bg-blue-100 text-blue-700 animate-pulse'
-                    : contentAnalysis[channel]
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {channelNames[channel]} {contentAnalysis[channel] ? '✓' : contentAnalysisLoading[channel] ? '...' : ''}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 결과 표시 */}
       {hasAnyResult && !isAnyLoading && (
         <div>
@@ -566,8 +677,8 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
                   <h3 className="font-semibold text-gray-800 mb-4">
                     분석된 콘텐츠 ({getChannelResult(activeTab)!.contentItems!.length}개)
                   </h3>
-                  <div className="space-y-3 max-h-80 overflow-y-auto">
-                    {getChannelResult(activeTab)!.contentItems!.slice(0, 10).map((item, idx) => (
+                  <div className="space-y-3 max-h-[480px] overflow-y-auto">
+                    {getChannelResult(activeTab)!.contentItems!.map((item, idx) => (
                       <div key={idx} className="flex items-start p-3 bg-gray-50 rounded-lg">
                         <span
                           className={`w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0 ${
@@ -781,15 +892,8 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
         </>
       )}
 
-      {loading && (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <p className="text-gray-600">광고를 분석 중입니다...</p>
-        </div>
-      )}
-
       {adAnalysis && !loading && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="flex justify-end">
             <button
               onClick={onReanalyze}
@@ -801,46 +905,83 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
               다시 분석
             </button>
           </div>
-          {/* 자사 광고 순위 */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-800 mb-4">자사 광고 분석</h3>
-            <div className="flex items-center mb-4">
-              <span className="text-gray-600 mr-3">현재 순위:</span>
-              <span className="text-3xl font-bold text-blue-600">
-                {adAnalysis.ourAd.rank > 0 ? `${adAnalysis.ourAd.rank}위` : '미노출'}
-              </span>
-            </div>
-            {adAnalysis.ourAd.rank > 0 && (
-              <div className="space-y-3">
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <span className="text-sm font-medium text-gray-700">제목 평가:</span>
-                  <p className="text-sm text-gray-600 mt-1">{adAnalysis.ourAd.evaluation.title}</p>
+
+          {/* 광고 분석 결과 */}
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
+            <h3 className="text-sm font-bold text-orange-800 flex items-center mb-4">
+              <span className="w-6 h-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center text-white text-xs mr-2">AI</span>
+              광고 분석 결과
+            </h3>
+
+            <div className="space-y-3">
+              {/* 자사 광고 순위 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-bold text-blue-700">1. 자사 광고 현황</div>
+                  <div className={`px-3 py-1 rounded-full text-sm font-bold ${
+                    adAnalysis.ourAd.rank > 0
+                      ? adAnalysis.ourAd.rank <= 3
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {adAnalysis.ourAd.rank > 0 ? `${adAnalysis.ourAd.rank}위` : '미노출'}
+                  </div>
                 </div>
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <span className="text-sm font-medium text-gray-700">설명 평가:</span>
-                  <p className="text-sm text-gray-600 mt-1">{adAnalysis.ourAd.evaluation.description}</p>
+                {adAnalysis.ourAd.rank > 0 && (
+                  <div className="space-y-3">
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <div className="text-xs font-medium text-blue-600 mb-1">제목 평가</div>
+                      <p className="text-sm text-gray-700">{adAnalysis.ourAd.evaluation.title}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <div className="text-xs font-medium text-blue-600 mb-1">설명 평가</div>
+                      <p className="text-sm text-gray-700">{adAnalysis.ourAd.evaluation.description}</p>
+                    </div>
+                  </div>
+                )}
+                {adAnalysis.ourAd.rank === 0 && (
+                  <p className="text-sm text-gray-500">현재 광고가 검색 결과에 노출되지 않고 있습니다.</p>
+                )}
+              </div>
+
+              {/* 경쟁사 분석 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-violet-500">
+                <div className="text-sm font-bold text-violet-700 mb-3">2. 경쟁사 광고 분석</div>
+                <div className="space-y-2">
+                  {adAnalysis.competitorAnalysis.split('\n').filter(line => line.trim()).map((line, idx) => (
+                    <div key={idx} className="bg-violet-50 rounded-lg p-3">
+                      <p className="text-sm text-gray-700">{line.trim()}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* 경쟁사 분석 */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-800 mb-4">경쟁사 광고 분석</h3>
-            <div className="text-sm text-gray-600 whitespace-pre-line">{adAnalysis.competitorAnalysis}</div>
-          </div>
-
-          {/* 광고 제안 */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-800 mb-4">광고 개선 제안</h3>
-            <div className="grid gap-4">
-              {adAnalysis.adSuggestions.map((suggestion, idx) => (
-                <div key={idx} className="bg-blue-50 p-4 rounded-lg">
-                  <div className="font-medium text-blue-800 mb-1">{suggestion.title}</div>
-                  <div className="text-sm text-gray-700 mb-2">{suggestion.description}</div>
-                  <div className="text-xs text-gray-500">개선 포인트: {suggestion.improvementPoints}</div>
+              {/* 광고 개선 제안 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-green-500">
+                <div className="text-sm font-bold text-green-700 mb-3">3. 광고 개선 제안</div>
+                <div className="space-y-3">
+                  {adAnalysis.adSuggestions.map((suggestion, idx) => (
+                    <div key={idx} className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1">
+                          <div className="font-medium text-green-800 text-sm">{suggestion.title}</div>
+                          <p className="text-sm text-gray-600 mt-1">{suggestion.description}</p>
+                          <div className="mt-2 flex items-center gap-1 text-xs text-green-600">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            <span>{suggestion.improvementPoints}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </div>
@@ -863,9 +1004,11 @@ interface ReportProps {
   report: IntegratedReportData;
   onBack: () => void;
   onRegenerate: () => void;
+  pptLoading: boolean;
+  onPptDownload: () => void;
 }
 
-const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate }) => {
+const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate, pptLoading, onPptDownload }) => {
   const [expandedSections, setExpandedSections] = useState<string[]>([
     'executiveSummary',
     'perceptionStages',
@@ -877,7 +1020,6 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
     'actionPlan',
     'conclusion',
   ]);
-  const [pptLoading, setPptLoading] = useState(false);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) =>
@@ -908,35 +1050,6 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
     </div>
   );
 
-  // PPT 다운로드 핸들러
-  const handleDownloadPPT = async () => {
-    setPptLoading(true);
-    try {
-      const response = await fetch('/api/generate-ppt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report }),
-      });
-
-      if (!response.ok) throw new Error('PPT 생성 실패');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${report.keyword}_마케팅분석리포트.pptx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('PPT 다운로드 오류:', error);
-      alert('PPT 다운로드 중 오류가 발생했습니다.');
-    } finally {
-      setPptLoading(false);
-    }
-  };
-
   return (
     <div>
       {/* 헤더 */}
@@ -962,8 +1075,8 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {report.executiveSummary?.keyMetrics?.map((metric, idx) => (
               <div key={idx} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-indigo-600">{metric.value}</div>
-                <div className="text-sm font-medium text-gray-700 mt-1">{metric.label}</div>
+                <div className="text-sm font-bold text-gray-800">{metric.label}</div>
+                <div className="text-lg font-semibold text-indigo-600 mt-1">{metric.value}</div>
                 <div className="text-xs text-gray-500 mt-1">{metric.description}</div>
               </div>
             ))}
@@ -1392,7 +1505,7 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
           리포트 재생성
         </button>
         <button
-          onClick={handleDownloadPPT}
+          onClick={onPptDownload}
           disabled={pptLoading}
           className={`px-6 py-3 font-medium rounded-lg transition-all flex items-center justify-center gap-2 ${
             pptLoading
@@ -1400,22 +1513,10 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate 
               : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg'
           }`}
         >
-          {pptLoading ? (
-            <>
-              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              PPT 생성 중...
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              PPT 다운로드
-            </>
-          )}
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          PPT 다운로드
         </button>
       </div>
     </div>
@@ -1429,6 +1530,7 @@ export default function IntegratedAnalysisPage() {
   const [analysisState, setAnalysisState] = useState<IntegratedAnalysisState>(initialAnalysisState);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pptLoading, setPptLoading] = useState(false);
 
   // 상태 업데이트 헬퍼
   const updateState = (updates: Partial<IntegratedAnalysisState>) => {
@@ -1441,7 +1543,7 @@ export default function IntegratedAnalysisPage() {
 
     // 각 단계별 데이터 리셋
     if (fromStep <= 2) {
-      updateState({ keywordExpansion: null });
+      updateState({ keywordExpansion: null, keywordExpansionGPTAnalysis: null });
     }
     if (fromStep <= 3) {
       updateState({
@@ -1482,14 +1584,36 @@ export default function IntegratedAnalysisPage() {
       const response = await axios.post('/api/keyword-expansion', {
         keyword: analysisState.keyword,
       });
+      const keywordExpansionData = response.data.data;
       updateState({
-        keywordExpansion: response.data.data,
+        keywordExpansion: keywordExpansionData,
         keywordExpansionLoading: false,
       });
+      // GPT 분석 자동 호출
+      await handleKeywordExpansionGPTAnalysis(keywordExpansionData);
     } catch (err) {
       console.error('키워드 확장 오류:', err);
       setError('키워드 확장 분석 중 오류가 발생했습니다.');
       updateState({ keywordExpansionLoading: false });
+    }
+  };
+
+  // Step 2: 키워드 확장 GPT 분석
+  const handleKeywordExpansionGPTAnalysis = async (keywordExpansion: KeywordExpansionResult) => {
+    updateState({ keywordExpansionGPTLoading: true });
+    try {
+      const response = await axios.post('/api/keyword-expansion-analysis', {
+        keyword: analysisState.keyword,
+        keywordExpansion,
+      });
+      updateState({
+        keywordExpansionGPTAnalysis: response.data.analysis,
+        keywordExpansionGPTLoading: false,
+      });
+    } catch (err) {
+      console.error('키워드 확장 GPT 분석 오류:', err);
+      // GPT 분석 실패해도 진행 가능하도록 에러만 로그
+      updateState({ keywordExpansionGPTLoading: false });
     }
   };
 
@@ -1646,6 +1770,46 @@ export default function IntegratedAnalysisPage() {
     handleGenerateReport();
   };
 
+  // PPT 다운로드 핸들러
+  const handlePptDownload = async () => {
+    if (!analysisState.integratedReport) return;
+    setPptLoading(true);
+    try {
+      const response = await fetch('/api/generate-ppt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: analysisState.integratedReport }),
+      });
+
+      if (!response.ok) throw new Error('PPT 생성 실패');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${analysisState.integratedReport.keyword}_마케팅분석리포트.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('PPT 다운로드 오류:', err);
+      alert('PPT 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setPptLoading(false);
+    }
+  };
+
+  // 로딩 모달 메시지 결정
+  const isAnyContentLoading = Object.values(analysisState.contentAnalysisLoading).some(Boolean);
+  const currentLoadingMessage =
+    analysisState.keywordExpansionLoading ? '연관 키워드를 분석 중입니다...' :
+    analysisState.keywordExpansionGPTLoading ? 'AI가 키워드 데이터를 분석 중입니다...' :
+    isAnyContentLoading ? '채널별 콘텐츠를 분석 중입니다...' :
+    analysisState.adAnalysisLoading ? '광고를 분석 중입니다...' :
+    analysisState.reportLoading ? '종합 리포트를 생성 중입니다...' :
+    pptLoading ? 'PPT를 생성 중입니다...' : '';
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       <Head>
@@ -1655,13 +1819,9 @@ export default function IntegratedAnalysisPage() {
 
       <main className="max-w-5xl mx-auto px-4 py-8 sm:py-12 pt-20">
         {/* 헤더 */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-4">
-            키워드 통합 분석
-          </h1>
-          <p className="text-lg text-gray-600">
-            키워드 분석부터 마케팅 전략까지 한 번에 종합 리포트를 받아보세요.
-          </p>
+        <div className="text-left mb-4">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-800">키워드 통합 분석</h1>
+          <p className="text-sm text-gray-500">키워드 분석 및 마케팅 전략을 포함한 종합 리포트 생성</p>
         </div>
 
         {/* 에러 메시지 */}
@@ -1689,6 +1849,8 @@ export default function IntegratedAnalysisPage() {
               report={analysisState.integratedReport}
               onBack={() => setCurrentStep(4)}
               onRegenerate={handleRegenerateReport}
+              pptLoading={pptLoading}
+              onPptDownload={handlePptDownload}
             />
           ) : currentStep === 5 && !analysisState.integratedReport ? (
             <div className="text-center py-12">
@@ -1718,7 +1880,9 @@ export default function IntegratedAnalysisPage() {
               <Step2KeywordExpansion
                 keyword={analysisState.keyword}
                 keywordExpansion={analysisState.keywordExpansion}
+                keywordExpansionGPTAnalysis={analysisState.keywordExpansionGPTAnalysis}
                 loading={analysisState.keywordExpansionLoading}
+                gptLoading={analysisState.keywordExpansionGPTLoading}
                 onAnalyze={handleKeywordExpansion}
                 onReanalyze={handleReanalyzeStep2}
                 onPrev={() => goToStep(1)}
@@ -1775,21 +1939,7 @@ export default function IntegratedAnalysisPage() {
                       : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-xl hover:scale-105'
                   }`}
                 >
-                  {analysisState.reportLoading ? (
-                    <span className="flex items-center">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      리포트 생성 중...
-                    </span>
-                  ) : (
-                    '종합 리포트 생성'
-                  )}
+                  종합 리포트 생성
                 </button>
                 <p className="text-sm text-gray-500 mt-2">
                   수집된 모든 데이터를 기반으로 종합 마케팅 리포트를 생성합니다.
@@ -1800,6 +1950,9 @@ export default function IntegratedAnalysisPage() {
           )}
         </div>
       </main>
+
+      {/* 로딩 모달 */}
+      <LoadingModal isOpen={!!currentLoadingMessage} message={currentLoadingMessage} />
 
       {/* 푸터 */}
       <footer className="bg-white border-t border-gray-200 mt-16">

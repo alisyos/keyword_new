@@ -133,22 +133,22 @@ export default async function handler(
 
       metrics.forEach((metric, idx) => {
         slide3.addShape('rect', {
-          x: startX + idx * metricWidth, y: 1.4, w: 1.5, h: 1.2,
+          x: startX + idx * metricWidth, y: 1.1, w: 1.5, h: 1.3,
           fill: { color: COLORS.light },
           line: { color: COLORS.primary, width: 1 },
         });
-        slide3.addText(metric.value, {
-          x: startX + idx * metricWidth, y: 1.5, w: 1.5, h: 0.5,
-          fontSize: 18, color: COLORS.primary, fontFace: 'Arial',
+        slide3.addText(metric.label, {
+          x: startX + idx * metricWidth, y: 1.15, w: 1.5, h: 0.35,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
           align: 'center', bold: true,
         });
-        slide3.addText(metric.label, {
-          x: startX + idx * metricWidth, y: 2.0, w: 1.5, h: 0.3,
-          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
-          align: 'center',
+        slide3.addText(metric.value, {
+          x: startX + idx * metricWidth, y: 1.5, w: 1.5, h: 0.45,
+          fontSize: 16, color: COLORS.primary, fontFace: 'Arial',
+          align: 'center', bold: true,
         });
         slide3.addText(metric.description, {
-          x: startX + idx * metricWidth, y: 2.3, w: 1.5, h: 0.25,
+          x: startX + idx * metricWidth, y: 1.95, w: 1.5, h: 0.4,
           fontSize: 7, color: COLORS.slate, fontFace: 'Arial',
           align: 'center',
         });
@@ -157,31 +157,31 @@ export default async function handler(
 
     // Winning Formula & Market Opportunity
     slide3.addShape('rect', {
-      x: 0.5, y: 2.9, w: 4.3, h: 1.8,
+      x: 0.5, y: 2.6, w: 4.3, h: 2.0,
       fill: { color: 'E8F5E9' },
       line: { color: COLORS.success, width: 1 },
     });
     slide3.addText('Winning Formula', {
-      x: 0.6, y: 3.0, w: 4.1, h: 0.35,
+      x: 0.6, y: 2.7, w: 4.1, h: 0.35,
       fontSize: 12, color: COLORS.success, fontFace: 'Arial', bold: true,
     });
     slide3.addText(report.executiveSummary?.winningFormula || '', {
-      x: 0.6, y: 3.4, w: 4.1, h: 1.2,
+      x: 0.6, y: 3.05, w: 4.1, h: 1.45,
       fontSize: 10, color: COLORS.dark, fontFace: 'Arial',
       valign: 'top',
     });
 
     slide3.addShape('rect', {
-      x: 5.2, y: 2.9, w: 4.3, h: 1.8,
+      x: 5.2, y: 2.6, w: 4.3, h: 2.0,
       fill: { color: 'E3F2FD' },
       line: { color: COLORS.primary, width: 1 },
     });
     slide3.addText('Market Opportunity', {
-      x: 5.3, y: 3.0, w: 4.1, h: 0.35,
+      x: 5.3, y: 2.7, w: 4.1, h: 0.35,
       fontSize: 12, color: COLORS.primary, fontFace: 'Arial', bold: true,
     });
     slide3.addText(report.executiveSummary?.marketOpportunity || '', {
-      x: 5.3, y: 3.4, w: 4.1, h: 1.2,
+      x: 5.3, y: 3.05, w: 4.1, h: 1.45,
       fontSize: 10, color: COLORS.dark, fontFace: 'Arial',
       valign: 'top',
     });
@@ -203,44 +203,44 @@ export default async function handler(
 
       // Circle with number
       slide4.addShape('ellipse', {
-        x: xPos + 1.2, y: 1.4, w: 0.6, h: 0.6,
+        x: xPos + 1.2, y: 1.0, w: 0.5, h: 0.5,
         fill: { color: s.color },
       });
       slide4.addText(`${idx + 1}`, {
-        x: xPos + 1.2, y: 1.48, w: 0.6, h: 0.45,
-        fontSize: 18, color: 'FFFFFF', fontFace: 'Arial',
+        x: xPos + 1.2, y: 1.05, w: 0.5, h: 0.4,
+        fontSize: 16, color: 'FFFFFF', fontFace: 'Arial',
         align: 'center', bold: true,
       });
 
       // Stage box
       slide4.addShape('rect', {
-        x: xPos, y: 2.1, w: 3, h: 2.6,
+        x: xPos, y: 1.6, w: 3, h: 3.0,
         fill: { color: COLORS.light },
         line: { color: s.color, width: 2 },
       });
 
       slide4.addText(s.stage?.title || '', {
-        x: xPos + 0.1, y: 2.2, w: 2.8, h: 0.35,
+        x: xPos + 0.1, y: 1.7, w: 2.8, h: 0.35,
         fontSize: 12, color: s.color, fontFace: 'Arial', bold: true,
       });
       slide4.addText(s.label, {
-        x: xPos + 0.1, y: 2.5, w: 2.8, h: 0.2,
+        x: xPos + 0.1, y: 2.0, w: 2.8, h: 0.2,
         fontSize: 8, color: s.color, fontFace: 'Arial',
       });
       slide4.addText(s.stage?.insight || '', {
-        x: xPos + 0.1, y: 2.75, w: 2.8, h: 0.9,
+        x: xPos + 0.1, y: 2.25, w: 2.8, h: 1.1,
         fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
         valign: 'top',
       });
 
       // Keywords/PainPoints
       const keywords = idx === 2
-        ? s.stage?.painPoints?.slice(0, 3) || []
-        : s.stage?.keywords?.slice(0, 3) || [];
+        ? s.stage?.painPoints?.slice(0, 4) || []
+        : s.stage?.keywords?.slice(0, 4) || [];
 
       keywords.forEach((kw, kIdx) => {
         slide4.addText(`• ${kw}`, {
-          x: xPos + 0.1, y: 3.7 + kIdx * 0.3, w: 2.8, h: 0.25,
+          x: xPos + 0.1, y: 3.4 + kIdx * 0.28, w: 2.8, h: 0.25,
           fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
         });
       });
@@ -248,11 +248,11 @@ export default async function handler(
 
     // Arrows between stages
     slide4.addText('→', {
-      x: 3.3, y: 2.8, w: 0.5, h: 0.5,
+      x: 3.3, y: 2.5, w: 0.5, h: 0.5,
       fontSize: 24, color: COLORS.dark, align: 'center',
     });
     slide4.addText('→', {
-      x: 6.5, y: 2.8, w: 0.5, h: 0.5,
+      x: 6.5, y: 2.5, w: 0.5, h: 0.5,
       fontSize: 24, color: COLORS.dark, align: 'center',
     });
 
@@ -264,52 +264,52 @@ export default async function handler(
 
     // Total Search Volume
     slide5.addText(report.keywordMap?.totalSearchVolume || '0', {
-      x: 3.5, y: 1.3, w: 3, h: 0.6,
-      fontSize: 28, color: COLORS.orange, fontFace: 'Arial',
+      x: 3.5, y: 1.0, w: 3, h: 0.5,
+      fontSize: 24, color: COLORS.orange, fontFace: 'Arial',
       align: 'center', bold: true,
     });
     slide5.addText('총 월간 검색량', {
-      x: 3.5, y: 1.85, w: 3, h: 0.3,
-      fontSize: 12, color: COLORS.dark, fontFace: 'Arial',
+      x: 3.5, y: 1.45, w: 3, h: 0.25,
+      fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
       align: 'center',
     });
 
     // Top Keywords Table
     slide5.addText('상위 키워드 (빈도순)', {
-      x: 0.5, y: 2.3, w: 4.5, h: 0.35,
-      fontSize: 12, color: COLORS.dark, fontFace: 'Arial', bold: true,
+      x: 0.5, y: 1.85, w: 4.5, h: 0.3,
+      fontSize: 11, color: COLORS.dark, fontFace: 'Arial', bold: true,
     });
 
-    const topKeywords = report.keywordMap?.topKeywords?.slice(0, 8) || [];
+    const topKeywords = report.keywordMap?.topKeywords?.slice(0, 10) || [];
     const maxFreq = topKeywords[0]?.frequency || 1;
 
     topKeywords.forEach((kw, idx) => {
-      const yPos = 2.7 + idx * 0.35;
+      const yPos = 2.15 + idx * 0.32;
       slide5.addText(`${kw.rank}. ${kw.keyword}`, {
-        x: 0.5, y: yPos, w: 2.5, h: 0.3,
-        fontSize: 10, color: COLORS.dark, fontFace: 'Arial',
+        x: 0.5, y: yPos, w: 2.5, h: 0.28,
+        fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       });
       // Bar
       const barWidth = (kw.frequency / maxFreq) * 1.5;
       slide5.addShape('rect', {
-        x: 3.0, y: yPos + 0.05, w: barWidth, h: 0.2,
+        x: 3.0, y: yPos + 0.05, w: barWidth, h: 0.18,
         fill: { color: COLORS.orange },
       });
       slide5.addText(`${kw.frequency}`, {
-        x: 4.6, y: yPos, w: 0.4, h: 0.3,
-        fontSize: 9, color: COLORS.slate, fontFace: 'Arial',
+        x: 4.6, y: yPos, w: 0.4, h: 0.28,
+        fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
         align: 'right',
       });
     });
 
     // Pain Point Keywords
     slide5.addText('Pain Point 키워드', {
-      x: 5.2, y: 2.3, w: 4.3, h: 0.35,
-      fontSize: 12, color: COLORS.danger, fontFace: 'Arial', bold: true,
+      x: 5.2, y: 1.85, w: 4.3, h: 0.3,
+      fontSize: 11, color: COLORS.danger, fontFace: 'Arial', bold: true,
     });
 
     slide5.addShape('rect', {
-      x: 5.2, y: 2.7, w: 4.3, h: 1.5,
+      x: 5.2, y: 2.15, w: 4.3, h: 1.4,
       fill: { color: 'FFEBEE' },
     });
 
@@ -318,20 +318,20 @@ export default async function handler(
       const row = Math.floor(idx / 2);
       const col = idx % 2;
       slide5.addText(`• ${kw.keyword} (${kw.frequency})`, {
-        x: 5.3 + col * 2.1, y: 2.8 + row * 0.4, w: 2, h: 0.35,
+        x: 5.3 + col * 2.1, y: 2.25 + row * 0.4, w: 2, h: 0.35,
         fontSize: 9, color: COLORS.danger, fontFace: 'Arial',
       });
     });
 
     // Data Insights
     slide5.addText('데이터 인사이트', {
-      x: 5.2, y: 4.3, w: 4.3, h: 0.35,
-      fontSize: 12, color: COLORS.dark, fontFace: 'Arial', bold: true,
+      x: 5.2, y: 3.65, w: 4.3, h: 0.3,
+      fontSize: 11, color: COLORS.dark, fontFace: 'Arial', bold: true,
     });
 
-    report.keywordMap?.dataInsights?.slice(0, 3).forEach((insight, idx) => {
+    report.keywordMap?.dataInsights?.slice(0, 4).forEach((insight, idx) => {
       slide5.addText(`• ${insight}`, {
-        x: 5.2, y: 4.7 + idx * 0.35, w: 4.3, h: 0.3,
+        x: 5.2, y: 3.95 + idx * 0.38, w: 4.3, h: 0.35,
         fontSize: 9, color: COLORS.slate, fontFace: 'Arial',
       });
     });
@@ -347,10 +347,10 @@ export default async function handler(
       const row = Math.floor(idx / 2);
       const col = idx % 2;
       const xPos = 0.5 + col * 4.7;
-      const yPos = 1.4 + row * 2.2;
+      const yPos = 1.05 + row * 2.25;
 
       slide6.addShape('rect', {
-        x: xPos, y: yPos, w: 4.5, h: 2,
+        x: xPos, y: yPos, w: 4.5, h: 2.1,
         fill: { color: COLORS.light },
         line: { color: COLORS.secondary, width: 1 },
       });
@@ -361,13 +361,13 @@ export default async function handler(
       });
 
       slide6.addText(channel.role, {
-        x: xPos + 0.1, y: yPos + 0.45, w: 4.3, h: 0.3,
+        x: xPos + 0.1, y: yPos + 0.45, w: 4.3, h: 0.35,
         fontSize: 9, color: COLORS.primary, fontFace: 'Arial',
       });
 
       // Sentiment bar
       if (channel.sentimentBreakdown) {
-        const barY = yPos + 0.8;
+        const barY = yPos + 0.85;
         const totalWidth = 4.3;
         const posWidth = (channel.sentimentBreakdown.positive / 100) * totalWidth;
         const neuWidth = (channel.sentimentBreakdown.neutral / 100) * totalWidth;
@@ -386,13 +386,13 @@ export default async function handler(
       // Key interests
       const interests = channel.keyInterests?.slice(0, 3).join(', ') || '';
       slide6.addText(`관심사: ${interests}`, {
-        x: xPos + 0.1, y: yPos + 1.2, w: 4.3, h: 0.25,
+        x: xPos + 0.1, y: yPos + 1.25, w: 4.3, h: 0.25,
         fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
       });
 
       // Strategy
       slide6.addText(`전략: ${channel.strategy}`, {
-        x: xPos + 0.1, y: yPos + 1.5, w: 4.3, h: 0.45,
+        x: xPos + 0.1, y: yPos + 1.55, w: 4.3, h: 0.5,
         fontSize: 8, color: COLORS.dark, fontFace: 'Arial',
         valign: 'top',
       });
@@ -406,143 +406,133 @@ export default async function handler(
 
     // 경쟁 분석
     slide7.addShape('rect', {
-      x: 0.5, y: 1.4, w: 4.5, h: 3.3,
+      x: 0.5, y: 1.05, w: 4.5, h: 3.6,
       fill: { color: COLORS.light },
       line: { color: COLORS.slate, width: 1 },
     });
 
     slide7.addText('경쟁 구도 분석', {
-      x: 0.6, y: 1.5, w: 4.3, h: 0.4,
-      fontSize: 14, color: COLORS.slate, fontFace: 'Arial', bold: true,
+      x: 0.6, y: 1.15, w: 4.3, h: 0.35,
+      fontSize: 13, color: COLORS.slate, fontFace: 'Arial', bold: true,
     });
 
     const compLevel = report.marketEnvironment?.competitionAnalysis?.level || '중간';
     const levelColor = compLevel === '높음' ? COLORS.danger : compLevel === '중간' ? COLORS.warning : COLORS.success;
     slide7.addText(`경쟁 강도: ${compLevel}`, {
-      x: 0.6, y: 1.95, w: 4.3, h: 0.35,
+      x: 0.6, y: 1.55, w: 4.3, h: 0.3,
       fontSize: 11, color: levelColor, fontFace: 'Arial', bold: true,
     });
 
     slide7.addText(report.marketEnvironment?.competitionAnalysis?.insight || '', {
-      x: 0.6, y: 2.35, w: 4.3, h: 1,
+      x: 0.6, y: 1.9, w: 4.3, h: 1.2,
       fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       valign: 'top',
     });
 
     slide7.addText('주요 플레이어:', {
-      x: 0.6, y: 3.4, w: 4.3, h: 0.25,
+      x: 0.6, y: 3.15, w: 4.3, h: 0.25,
       fontSize: 9, color: COLORS.slate, fontFace: 'Arial', bold: true,
     });
 
-    const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 4) || [];
+    const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 5) || [];
     players.forEach((player, idx) => {
       slide7.addText(`• ${player}`, {
-        x: 0.6, y: 3.7 + idx * 0.25, w: 4.3, h: 0.25,
+        x: 0.6, y: 3.4 + idx * 0.28, w: 4.3, h: 0.25,
         fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       });
     });
 
     // 디지털 트렌드
     slide7.addShape('rect', {
-      x: 5.2, y: 1.4, w: 4.3, h: 3.3,
+      x: 5.2, y: 1.05, w: 4.3, h: 3.6,
       fill: { color: 'E3F2FD' },
       line: { color: COLORS.primary, width: 1 },
     });
 
     slide7.addText('디지털 트렌드', {
-      x: 5.3, y: 1.5, w: 4.1, h: 0.4,
-      fontSize: 14, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      x: 5.3, y: 1.15, w: 4.1, h: 0.35,
+      fontSize: 13, color: COLORS.primary, fontFace: 'Arial', bold: true,
     });
 
     slide7.addText(`모바일 비중: ${report.marketEnvironment?.digitalTrends?.mobileShare || '-'}`, {
-      x: 5.3, y: 2.0, w: 4.1, h: 0.3,
+      x: 5.3, y: 1.6, w: 4.1, h: 0.3,
       fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
     });
 
     slide7.addText(`콘텐츠 신선도: ${report.marketEnvironment?.digitalTrends?.contentFreshness || '-'}`, {
-      x: 5.3, y: 2.35, w: 4.1, h: 0.3,
+      x: 5.3, y: 1.95, w: 4.1, h: 0.3,
       fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
     });
 
     slide7.addText('주요 변화:', {
-      x: 5.3, y: 2.8, w: 4.1, h: 0.25,
+      x: 5.3, y: 2.4, w: 4.1, h: 0.25,
       fontSize: 9, color: COLORS.primary, fontFace: 'Arial', bold: true,
     });
 
-    report.marketEnvironment?.digitalTrends?.orgChanges?.slice(0, 5).forEach((change, idx) => {
+    report.marketEnvironment?.digitalTrends?.orgChanges?.slice(0, 6).forEach((change, idx) => {
       slide7.addText(`→ ${change}`, {
-        x: 5.3, y: 3.1 + idx * 0.35, w: 4.1, h: 0.3,
+        x: 5.3, y: 2.7 + idx * 0.35, w: 4.1, h: 0.32,
         fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       });
     });
 
     addPageNumber(slide7, 7);
 
-    // ========== Slides 8-9: 마케팅 인사이트 ==========
+    // ========== Slides 8+: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========
     const insights = report.marketingInsights || [];
-    const insightSlides = Math.ceil(insights.length / 2);
+    const insightSlides = insights.length;
 
-    for (let slideIdx = 0; slideIdx < insightSlides; slideIdx++) {
-      const slideNum = 8 + slideIdx;
+    insights.forEach((insight, insightIdx) => {
+      const slideNum = 8 + insightIdx;
       const slide = pptx.addSlide();
-      addSlideHeader(slide, `핵심 마케팅 인사이트 ${slideIdx > 0 ? '(계속)' : ''}`, 'Marketing Insights');
+      addSlideHeader(slide, `핵심 마케팅 인사이트 #${insight.id}`, insight.title);
 
-      const slideInsights = insights.slice(slideIdx * 2, slideIdx * 2 + 2);
+      const yOffset = 1.1;
 
-      slideInsights.forEach((insight, idx) => {
-        const yOffset = 1.4 + idx * 2.3;
-
-        // Title bar
-        slide.addShape('rect', {
-          x: 0.5, y: yOffset, w: 9, h: 0.5,
-          fill: { color: COLORS.pink },
-        });
-        slide.addText(`Insight #${insight.id}: ${insight.title}`, {
-          x: 0.6, y: yOffset + 0.1, w: 8.8, h: 0.35,
-          fontSize: 12, color: 'FFFFFF', fontFace: 'Arial', bold: true,
-        });
-
-        // Pain Point
-        slide.addShape('rect', {
-          x: 0.5, y: yOffset + 0.55, w: 4.3, h: 1.5,
-          fill: { color: 'FFEBEE' },
-        });
-        slide.addText(`Pain Point: ${insight.painPoint?.label || ''}`, {
-          x: 0.6, y: yOffset + 0.6, w: 4.1, h: 0.3,
-          fontSize: 10, color: COLORS.danger, fontFace: 'Arial', bold: true,
-        });
-        insight.painPoint?.details?.slice(0, 3).forEach((detail, dIdx) => {
-          slide.addText(`• ${detail}`, {
-            x: 0.6, y: yOffset + 0.95 + dIdx * 0.3, w: 4.1, h: 0.28,
-            fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
-          });
-        });
-
-        // Opportunity
-        slide.addShape('rect', {
-          x: 5.2, y: yOffset + 0.55, w: 4.3, h: 1.5,
-          fill: { color: 'E8F5E9' },
-        });
-        slide.addText(`Opportunity: ${insight.opportunity?.label || ''}`, {
-          x: 5.3, y: yOffset + 0.6, w: 4.1, h: 0.3,
-          fontSize: 10, color: COLORS.success, fontFace: 'Arial', bold: true,
-        });
-        insight.opportunity?.details?.slice(0, 3).forEach((detail, dIdx) => {
-          slide.addText(`• ${detail}`, {
-            x: 5.3, y: yOffset + 0.95 + dIdx * 0.3, w: 4.1, h: 0.28,
-            fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
-          });
-        });
-
-        // Action
-        slide.addText(`ACTION → ${insight.action}`, {
-          x: 0.5, y: yOffset + 2.1, w: 9, h: 0.25,
-          fontSize: 9, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      // Pain Point
+      slide.addShape('rect', {
+        x: 0.5, y: yOffset, w: 4.3, h: 2.2,
+        fill: { color: 'FFEBEE' },
+      });
+      slide.addText(`Pain Point: ${insight.painPoint?.label || ''}`, {
+        x: 0.6, y: yOffset + 0.1, w: 4.1, h: 0.35,
+        fontSize: 11, color: COLORS.danger, fontFace: 'Arial', bold: true,
+      });
+      insight.painPoint?.details?.slice(0, 5).forEach((detail, dIdx) => {
+        slide.addText(`• ${detail}`, {
+          x: 0.6, y: yOffset + 0.5 + dIdx * 0.32, w: 4.1, h: 0.3,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
         });
       });
 
+      // Opportunity
+      slide.addShape('rect', {
+        x: 5.2, y: yOffset, w: 4.3, h: 2.2,
+        fill: { color: 'E8F5E9' },
+      });
+      slide.addText(`Opportunity: ${insight.opportunity?.label || ''}`, {
+        x: 5.3, y: yOffset + 0.1, w: 4.1, h: 0.35,
+        fontSize: 11, color: COLORS.success, fontFace: 'Arial', bold: true,
+      });
+      insight.opportunity?.details?.slice(0, 5).forEach((detail, dIdx) => {
+        slide.addText(`• ${detail}`, {
+          x: 5.3, y: yOffset + 0.5 + dIdx * 0.32, w: 4.1, h: 0.3,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        });
+      });
+
+      // Action
+      slide.addShape('rect', {
+        x: 0.5, y: yOffset + 2.35, w: 9, h: 0.5,
+        fill: { color: 'E3F2FD' },
+      });
+      slide.addText(`ACTION → ${insight.action}`, {
+        x: 0.6, y: yOffset + 2.45, w: 8.8, h: 0.35,
+        fontSize: 10, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
       addPageNumber(slide, slideNum);
-    }
+    });
 
     // ========== Slides: 실행 전략 ==========
     const strategies = report.actionStrategies || [];
@@ -552,8 +542,8 @@ export default async function handler(
       addSlideHeader(slide, `실행 전략 #${strategy.id}`, strategy.subtitle);
 
       slide.addText(strategy.title, {
-        x: 0.5, y: 1.4, w: 9, h: 0.4,
-        fontSize: 16, color: COLORS.accent, fontFace: 'Arial', bold: true,
+        x: 0.5, y: 1.05, w: 9, h: 0.35,
+        fontSize: 14, color: COLORS.accent, fontFace: 'Arial', bold: true,
       });
 
       const sections = strategy.sections || [];
@@ -561,10 +551,10 @@ export default async function handler(
         const col = sIdx % 2;
         const row = Math.floor(sIdx / 2);
         const xPos = 0.5 + col * 4.7;
-        const yPos = 1.9 + row * 1.5;
+        const yPos = 1.5 + row * 1.6;
 
         slide.addShape('rect', {
-          x: xPos, y: yPos, w: 4.5, h: 1.3,
+          x: xPos, y: yPos, w: 4.5, h: 1.45,
           fill: { color: COLORS.light },
         });
 
@@ -573,9 +563,9 @@ export default async function handler(
           fontSize: 10, color: COLORS.accent, fontFace: 'Arial', bold: true,
         });
 
-        section.items?.slice(0, 3).forEach((item, iIdx) => {
+        section.items?.slice(0, 4).forEach((item, iIdx) => {
           slide.addText(`✓ ${item}`, {
-            x: xPos + 0.1, y: yPos + 0.4 + iIdx * 0.28, w: 4.3, h: 0.26,
+            x: xPos + 0.1, y: yPos + 0.38 + iIdx * 0.26, w: 4.3, h: 0.24,
             fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
           });
         });
@@ -584,21 +574,21 @@ export default async function handler(
       // Expected Metrics
       if (strategy.expectedMetrics && strategy.expectedMetrics.length > 0) {
         slide.addText('예상 성과 지표', {
-          x: 0.5, y: 4.95, w: 9, h: 0.25,
+          x: 0.5, y: 4.75, w: 9, h: 0.25,
           fontSize: 10, color: COLORS.accent, fontFace: 'Arial', bold: true,
         });
 
         strategy.expectedMetrics.slice(0, 4).forEach((metric, mIdx) => {
           slide.addShape('rect', {
-            x: 0.5 + mIdx * 2.3, y: 5.25, w: 2.1, h: 0.5,
+            x: 0.5 + mIdx * 2.3, y: 5.0, w: 2.1, h: 0.55,
             fill: { color: 'E8F5E9' },
           });
           slide.addText(metric.value, {
-            x: 0.5 + mIdx * 2.3, y: 5.28, w: 2.1, h: 0.25,
+            x: 0.5 + mIdx * 2.3, y: 5.03, w: 2.1, h: 0.28,
             fontSize: 12, color: COLORS.accent, fontFace: 'Arial', align: 'center', bold: true,
           });
           slide.addText(metric.label, {
-            x: 0.5 + mIdx * 2.3, y: 5.52, w: 2.1, h: 0.2,
+            x: 0.5 + mIdx * 2.3, y: 5.3, w: 2.1, h: 0.22,
             fontSize: 8, color: COLORS.slate, fontFace: 'Arial', align: 'center',
           });
         });
@@ -614,23 +604,23 @@ export default async function handler(
 
     // Key Findings
     actionPlanSlide.addText('Key Findings', {
-      x: 0.5, y: 1.3, w: 9, h: 0.3,
-      fontSize: 12, color: COLORS.warning, fontFace: 'Arial', bold: true,
+      x: 0.5, y: 1.0, w: 9, h: 0.28,
+      fontSize: 11, color: COLORS.warning, fontFace: 'Arial', bold: true,
     });
 
     report.actionPlan?.keyFindings?.slice(0, 4).forEach((finding, idx) => {
       const col = idx % 2;
       const row = Math.floor(idx / 2);
       actionPlanSlide.addText(`${idx + 1}. ${finding}`, {
-        x: 0.5 + col * 4.7, y: 1.65 + row * 0.35, w: 4.5, h: 0.32,
+        x: 0.5 + col * 4.7, y: 1.3 + row * 0.35, w: 4.5, h: 0.32,
         fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       });
     });
 
     // Timeline
     actionPlanSlide.addText('실행 타임라인', {
-      x: 0.5, y: 2.5, w: 9, h: 0.3,
-      fontSize: 12, color: COLORS.dark, fontFace: 'Arial', bold: true,
+      x: 0.5, y: 2.1, w: 9, h: 0.28,
+      fontSize: 11, color: COLORS.dark, fontFace: 'Arial', bold: true,
     });
 
     const phaseColors: Record<string, string> = {
@@ -640,29 +630,29 @@ export default async function handler(
       '90d': COLORS.success,
     };
 
-    report.actionPlan?.timeline?.slice(0, 6).forEach((item, idx) => {
-      const yPos = 2.9 + idx * 0.45;
+    report.actionPlan?.timeline?.slice(0, 8).forEach((item, idx) => {
+      const yPos = 2.45 + idx * 0.4;
       const color = phaseColors[item.phase] || COLORS.slate;
 
       // Phase badge
       actionPlanSlide.addShape('rect', {
-        x: 0.5, y: yPos, w: 0.7, h: 0.35,
+        x: 0.5, y: yPos, w: 0.7, h: 0.32,
         fill: { color: color },
       });
       actionPlanSlide.addText(item.phase === 'NOW' ? '즉시' : item.phase, {
-        x: 0.5, y: yPos + 0.05, w: 0.7, h: 0.25,
+        x: 0.5, y: yPos + 0.04, w: 0.7, h: 0.24,
         fontSize: 8, color: 'FFFFFF', fontFace: 'Arial', align: 'center', bold: true,
       });
 
       // Category
       actionPlanSlide.addText(item.category, {
-        x: 1.3, y: yPos, w: 1.5, h: 0.35,
+        x: 1.3, y: yPos, w: 1.5, h: 0.32,
         fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
       });
 
       // Label & Action
       actionPlanSlide.addText(`${item.label}: ${item.action}`, {
-        x: 2.8, y: yPos, w: 6.7, h: 0.35,
+        x: 2.8, y: yPos, w: 6.7, h: 0.32,
         fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
       });
     });
@@ -752,19 +742,19 @@ export default async function handler(
 // 헬퍼 함수: 슬라이드 헤더 추가
 function addSlideHeader(slide: PptxGenJS.Slide, title: string, subtitle?: string) {
   slide.addShape('rect', {
-    x: 0, y: 0, w: 10, h: 1.2,
+    x: 0, y: 0, w: 10, h: 0.9,
     fill: { color: COLORS.light },
   });
 
   slide.addText(title, {
-    x: 0.5, y: 0.3, w: 9, h: 0.5,
-    fontSize: 24, color: COLORS.dark, fontFace: 'Arial', bold: true,
+    x: 0.5, y: 0.15, w: 9, h: 0.4,
+    fontSize: 20, color: COLORS.dark, fontFace: 'Arial', bold: true,
   });
 
   if (subtitle) {
     slide.addText(subtitle, {
-      x: 0.5, y: 0.8, w: 9, h: 0.3,
-      fontSize: 12, color: COLORS.slate, fontFace: 'Arial',
+      x: 0.5, y: 0.55, w: 9, h: 0.25,
+      fontSize: 10, color: COLORS.slate, fontFace: 'Arial',
     });
   }
 }
