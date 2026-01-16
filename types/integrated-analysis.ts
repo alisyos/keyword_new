@@ -287,6 +287,7 @@ export interface IntegratedReportRequest {
   keyword: string;
   companyName?: string;
   keywordExpansion: KeywordExpansionResult;
+  keywordExpansionGPTAnalysis?: KeywordExpansionGPTAnalysis;
   contentAnalysis: {
     blog?: KeywordAnalysisResult;
     cafe?: KeywordAnalysisResult;

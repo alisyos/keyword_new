@@ -50,9 +50,17 @@ function buildSimpleSummary(keyword: string, keywordList: KeywordExpansionData[]
   const totalVolume = totalPc + totalMobile;
   const mobileShare = totalVolume > 0 ? Math.round((totalMobile / totalVolume) * 100) : 0;
 
-  // 상위 10개 키워드만 포함
-  const top10 = keywordList.slice(0, 10).map((kw, i) => {
-    const vol = (parseInt(kw.monthlyPcQcCnt) || 0) + (parseInt(kw.monthlyMobileQcCnt) || 0);
+  // PC+모바일 합계 검색량 기준 상위 20개 키워드
+  const sortedByVolume = [...keywordList].sort((a, b) => {
+    const volA = (a.monthlyPcQcCnt === '< 10' ? 5 : parseInt(a.monthlyPcQcCnt) || 0)
+               + (a.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(a.monthlyMobileQcCnt) || 0);
+    const volB = (b.monthlyPcQcCnt === '< 10' ? 5 : parseInt(b.monthlyPcQcCnt) || 0)
+               + (b.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(b.monthlyMobileQcCnt) || 0);
+    return volB - volA;
+  });
+  const top20 = sortedByVolume.slice(0, 20).map((kw, i) => {
+    const vol = (kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0)
+              + (kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0);
     const ctr = kw.monthlyAveMobileCtr !== '< 10' ? parseFloat(kw.monthlyAveMobileCtr).toFixed(1) + '%' : '-';
     return `${i + 1}. ${kw.relKeyword} (검색량: ${vol.toLocaleString()}, CTR: ${ctr}, 경쟁: ${kw.compIdx})`;
   }).join('\n');
@@ -62,8 +70,8 @@ function buildSimpleSummary(keyword: string, keywordList: KeywordExpansionData[]
 총 검색량: ${totalVolume.toLocaleString()}건 (모바일 ${mobileShare}%)
 경쟁도: 높음 ${highComp}개, 중간 ${midComp}개, 낮음 ${lowComp}개
 
-상위 10개 키워드:
-${top10}`;
+검색량 기준 상위 20개 키워드:
+${top20}`;
 }
 
 async function generateKeywordExpansionAnalysis(

@@ -4,6 +4,7 @@ import {
   IntegratedReportData,
   IntegratedReportRequest,
   KeywordExpansionResult,
+  KeywordExpansionGPTAnalysis,
   KeywordAnalysisResult,
   AdAnalysisResult,
   ContentType,
@@ -28,6 +29,7 @@ export default async function handler(
       keyword,
       companyName,
       keywordExpansion,
+      keywordExpansionGPTAnalysis,
       contentAnalysis,
       adAnalysis,
     }: IntegratedReportRequest = req.body;
@@ -41,7 +43,7 @@ export default async function handler(
     }
 
     // 분석 데이터 요약 생성
-    const dataSummary = buildDataSummary(keyword, keywordExpansion, contentAnalysis, adAnalysis);
+    const dataSummary = buildDataSummary(keyword, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis);
 
     // GPT를 사용하여 종합 리포트 생성
     const report = await generateIntegratedReport(keyword, companyName, dataSummary, keywordExpansion, contentAnalysis);
@@ -80,6 +82,7 @@ function calculateMobileShare(keywordExpansion: KeywordExpansionResult): number 
 function buildDataSummary(
   keyword: string,
   keywordExpansion: KeywordExpansionResult,
+  keywordExpansionGPTAnalysis: KeywordExpansionGPTAnalysis | undefined,
   contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
   adAnalysis?: AdAnalysisResult
 ): string {
@@ -113,6 +116,16 @@ function buildDataSummary(
     summary += `- 높음: ${highComp}개 키워드 (${Math.round(highComp / keywordExpansion.keywordList.length * 100)}%)\n`;
     summary += `- 중간: ${midComp}개 키워드 (${Math.round(midComp / keywordExpansion.keywordList.length * 100)}%)\n`;
     summary += `- 낮음: ${lowComp}개 키워드 (${Math.round(lowComp / keywordExpansion.keywordList.length * 100)}%)\n`;
+
+    // AI 분석 인사이트 추가
+    if (keywordExpansionGPTAnalysis) {
+      summary += `\n### AI 분석 인사이트\n`;
+      summary += `- 검색량 분석: ${keywordExpansionGPTAnalysis.searchVolumeAnalysis}\n`;
+      summary += `- 클릭율 분석: ${keywordExpansionGPTAnalysis.engagementAnalysis}\n`;
+      summary += `- 경쟁강도 분석: ${keywordExpansionGPTAnalysis.competitionAnalysis}\n`;
+      summary += `- 소비자 트렌드: ${keywordExpansionGPTAnalysis.consumerTrendAnalysis}\n`;
+      summary += `- 결론: ${keywordExpansionGPTAnalysis.conclusion}\n`;
+    }
   }
 
   // 콘텐츠 분석 데이터 요약

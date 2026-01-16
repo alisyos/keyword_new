@@ -326,6 +326,36 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
                   <p className="text-sm text-gray-700">{keywordExpansionGPTAnalysis.conclusion}</p>
                 </div>
               </div>
+
+              {/* AI 분석에 사용된 상위 20개 키워드 */}
+              <div className="mt-4 pt-4 border-t border-indigo-200">
+                <div className="text-xs font-semibold text-indigo-700 mb-2">📊 AI 분석에 사용된 상위 20개 키워드 (검색량 기준)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[...keywordExpansion.keywordList]
+                    .sort((a, b) => {
+                      const volA = (a.monthlyPcQcCnt === '< 10' ? 5 : parseInt(a.monthlyPcQcCnt) || 0)
+                                 + (a.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(a.monthlyMobileQcCnt) || 0);
+                      const volB = (b.monthlyPcQcCnt === '< 10' ? 5 : parseInt(b.monthlyPcQcCnt) || 0)
+                                 + (b.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(b.monthlyMobileQcCnt) || 0);
+                      return volB - volA;
+                    })
+                    .slice(0, 20)
+                    .map((kw, idx) => {
+                      const vol = (kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0)
+                                + (kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0);
+                      return (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-2 py-1 bg-white border border-indigo-200 rounded text-xs text-gray-700"
+                        >
+                          <span className="text-indigo-500 font-semibold mr-1">{idx + 1}.</span>
+                          {kw.relKeyword}
+                          <span className="ml-1 text-gray-400">({vol.toLocaleString()})</span>
+                        </span>
+                      );
+                    })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -648,6 +678,56 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
                 </div>
               )}
 
+              {/* 긍정/부정 키워드 */}
+              {getChannelResult(activeTab)?.sentiment && (
+                getChannelResult(activeTab)!.sentiment!.positiveKeywords?.length > 0 ||
+                getChannelResult(activeTab)!.sentiment!.negativeKeywords?.length > 0
+              ) && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="font-semibold text-gray-800 mb-4">감성 키워드 분석</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 긍정 키워드 */}
+                    <div className="bg-green-50 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-green-700 mb-3 flex items-center">
+                        <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                        긍정 키워드
+                      </h4>
+                      <div className="space-y-2">
+                        {getChannelResult(activeTab)!.sentiment!.positiveKeywords?.slice(0, 5).map((kw, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-700">{kw.keyword}</span>
+                            <span className="text-green-600 font-medium">{kw.score}/10</span>
+                          </div>
+                        ))}
+                        {(!getChannelResult(activeTab)!.sentiment!.positiveKeywords ||
+                          getChannelResult(activeTab)!.sentiment!.positiveKeywords.length === 0) && (
+                          <p className="text-sm text-gray-400">긍정 키워드 없음</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* 부정 키워드 */}
+                    <div className="bg-red-50 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-red-700 mb-3 flex items-center">
+                        <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+                        부정 키워드
+                      </h4>
+                      <div className="space-y-2">
+                        {getChannelResult(activeTab)!.sentiment!.negativeKeywords?.slice(0, 5).map((kw, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-700">{kw.keyword}</span>
+                            <span className="text-red-600 font-medium">{kw.score}/10</span>
+                          </div>
+                        ))}
+                        {(!getChannelResult(activeTab)!.sentiment!.negativeKeywords ||
+                          getChannelResult(activeTab)!.sentiment!.negativeKeywords.length === 0) && (
+                          <p className="text-sm text-gray-400">부정 키워드 없음</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* 주요 키워드 */}
               {getChannelResult(activeTab)?.keywords && getChannelResult(activeTab)!.keywords.length > 0 && (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -681,14 +761,16 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
                     {getChannelResult(activeTab)!.contentItems!.map((item, idx) => (
                       <div key={idx} className="flex items-start p-3 bg-gray-50 rounded-lg">
                         <span
-                          className={`w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0 ${
+                          className={`text-xs font-medium px-1.5 py-0.5 rounded mr-2 mt-0.5 flex-shrink-0 ${
                             item.sentiment === 'positive'
-                              ? 'bg-green-500'
+                              ? 'bg-green-100 text-green-700'
                               : item.sentiment === 'negative'
-                              ? 'bg-red-500'
-                              : 'bg-gray-400'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-gray-100 text-gray-600'
                           }`}
-                        />
+                        >
+                          {item.sentiment === 'positive' ? '긍정' : item.sentiment === 'negative' ? '부정' : '중립'}
+                        </span>
                         <div className="flex-1 min-w-0">
                           <a
                             href={item.link}
@@ -1706,6 +1788,7 @@ export default function IntegratedAnalysisPage() {
         keyword: analysisState.keyword,
         companyName: analysisState.companyName || undefined,
         keywordExpansion: analysisState.keywordExpansion,
+        keywordExpansionGPTAnalysis: analysisState.keywordExpansionGPTAnalysis || undefined,
         contentAnalysis: {
           blog: analysisState.contentAnalysis.blog || undefined,
           cafe: analysisState.contentAnalysis.cafe || undefined,
