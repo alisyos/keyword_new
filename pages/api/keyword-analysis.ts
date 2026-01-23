@@ -3,6 +3,9 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { OpenAI } from 'openai';
 
+// 키워드 유형 타입
+type KeywordType = 'general' | 'shopping' | 'brand';
+
 // 네이버 API 설정
 const naverClientId = process.env.NAVER_CLIENT_ID;
 const naverClientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -119,42 +122,82 @@ async function analyzeKeywords(blogItems: any[]): Promise<KeywordAnalysisResult>
   };
 }
 
+// 키워드 유형별 감성 분석 프롬프트 생성
+function getSentimentPrompt(keywordType: KeywordType, contentType: string): string {
+  const basePrompt = `당신은 텍스트의 감정을 분석하는 전문가입니다.`;
+
+  const typeContext: Record<KeywordType, string> = {
+    general: `검색광고 타겟팅 관점에서 콘텐츠를 분석하세요.
+- 구매 전환 가능성이 높은 감성 키워드 식별
+- 광고 카피에 활용 가능한 Pain Point 추출
+- 소비자의 정보 탐색 단계 파악
+- 긍정 키워드는 광고 메시지에 활용 가능한 것 위주로
+- 부정 키워드는 광고에서 해소해야 할 고민/걱정 위주로`,
+
+    shopping: `이커머스 구매 결정 관점에서 콘텐츠를 분석하세요.
+- 가격 민감도 관련 감성 분석
+- 품질/기능 관련 평가 키워드
+- 구매 결정 요인 (리뷰, 배송, A/S 등)
+- 긍정 키워드는 상품 셀링포인트에 활용 가능한 것 위주로
+- 부정 키워드는 상품 개선 또는 상세페이지에서 해소해야 할 우려 위주로`,
+
+    brand: `브랜드 인식 비교 관점에서 콘텐츠를 분석하세요.
+- 자사 브랜드 언급 감성 (긍정/부정/중립)
+- 경쟁 브랜드 대비 인식 차이
+- 브랜드 이미지 연관 키워드
+- 긍정 키워드는 브랜드 강점/차별점 위주로
+- 부정 키워드는 브랜드 이미지 개선이 필요한 부분 위주로`
+  };
+
+  return `${basePrompt}
+${typeContext[keywordType]}
+
+주어진 텍스트에서 다음 정보를 추출해주세요:
+1. 긍정적, 부정적, 중립적 감정의 비율(%)
+2. 가장 빈번한 긍정적 키워드 5개와 그 점수(1-10)
+3. 가장 빈번한 부정적 키워드 5개와 그 점수(1-10)
+
+응답은 다음 JSON 형식으로 제공해주세요:
+{
+  "positive": 숫자,
+  "negative": 숫자,
+  "neutral": 숫자,
+  "positiveKeywords": [{"keyword": "단어", "score": 숫자}, ...],
+  "negativeKeywords": [{"keyword": "단어", "score": 숫자}, ...]
+}
+
+숫자만 제공하고 설명은 하지 마세요.`;
+}
+
 // 감정 분석 함수
-async function analyzeSentiment(blogItems: any[]): Promise<KeywordAnalysisResult['sentiment']> {
+async function analyzeSentiment(
+  blogItems: any[],
+  keywordType: KeywordType = 'general',
+  contentType: string = 'blog'
+): Promise<KeywordAnalysisResult['sentiment']> {
   // HTML 태그 제거 함수
   const removeHtmlTags = (text: string) => text.replace(/<[^>]*>/g, '');
-  
+
   // 전체 텍스트 합치기
   let allText = '';
-  
+
   blogItems.forEach(item => {
     const title = removeHtmlTags(item.title);
     const description = removeHtmlTags(item.description);
     allText += ` ${title} ${description}`;
   });
-  
+
   try {
+    // 키워드 유형별 프롬프트 생성
+    const systemPrompt = getSentimentPrompt(keywordType, contentType);
+
     // OpenAI를 사용한 감정 분석
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1",
       messages: [
         {
           role: "system",
-          content: `당신은 텍스트의 감정을 분석하는 전문가입니다. 주어진 텍스트에서 다음 정보를 추출해주세요:
-          1. 긍정적, 부정적, 중립적 감정의 비율(%)
-          2. 가장 빈번한 긍정적 키워드 5개와 그 점수(1-10)
-          3. 가장 빈번한 부정적 키워드 5개와 그 점수(1-10)
-          
-          응답은 다음 JSON 형식으로 제공해주세요:
-          {
-            "positive": 숫자,
-            "negative": 숫자,
-            "neutral": 숫자,
-            "positiveKeywords": [{"keyword": "단어", "score": 숫자}, ...],
-            "negativeKeywords": [{"keyword": "단어", "score": 숫자}, ...]
-          }
-          
-          숫자만 제공하고 설명은 하지 마세요.`
+          content: systemPrompt
         },
         {
           role: "user",
@@ -359,7 +402,11 @@ export default async function handler(
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { keyword, contentType = 'blog' } = req.body;
+  const { keyword, contentType = 'blog', keywordType = 'general' }: {
+    keyword: string;
+    contentType?: string;
+    keywordType?: KeywordType;
+  } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
     return res.status(400).json({ error: '유효한 검색어를 입력해주세요' });
@@ -435,8 +482,8 @@ export default async function handler(
     // 키워드 분석 수행
     const keywordResult = await analyzeKeywords(contentItems);
     
-    // 감정 분석 수행
-    const sentimentResult = await analyzeSentiment(contentItems);
+    // 감정 분석 수행 (키워드 유형별 차별화)
+    const sentimentResult = await analyzeSentiment(contentItems, keywordType, contentType);
     
     // 개별 컨텐츠 긍부정 평가 수행
     const contentSentiments = await analyzeContentSentiments(contentItems);

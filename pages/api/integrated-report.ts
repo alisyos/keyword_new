@@ -7,7 +7,10 @@ import {
   KeywordExpansionGPTAnalysis,
   KeywordAnalysisResult,
   AdAnalysisResult,
+  ShoppingSearchAnalysisResult,
+  BrandComparisonResult,
   ContentType,
+  KeywordType,
   channelNames,
 } from '../../types/integrated-analysis';
 
@@ -27,11 +30,14 @@ export default async function handler(
   try {
     const {
       keyword,
+      keywordType = 'general',
       companyName,
       keywordExpansion,
       keywordExpansionGPTAnalysis,
       contentAnalysis,
       adAnalysis,
+      shoppingAnalysis,
+      brandComparison,
     }: IntegratedReportRequest = req.body;
 
     if (!keyword) {
@@ -43,10 +49,10 @@ export default async function handler(
     }
 
     // 분석 데이터 요약 생성
-    const dataSummary = buildDataSummary(keyword, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis);
+    const dataSummary = buildDataSummary(keyword, keywordType, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
 
     // GPT를 사용하여 종합 리포트 생성
-    const report = await generateIntegratedReport(keyword, companyName, dataSummary, keywordExpansion, contentAnalysis);
+    const report = await generateIntegratedReport(keyword, keywordType, companyName, dataSummary, keywordExpansion, contentAnalysis, shoppingAnalysis);
 
     res.status(200).json({ report });
   } catch (error) {
@@ -81,12 +87,22 @@ function calculateMobileShare(keywordExpansion: KeywordExpansionResult): number 
 // 분석 데이터 요약 생성
 function buildDataSummary(
   keyword: string,
+  keywordType: KeywordType,
   keywordExpansion: KeywordExpansionResult,
   keywordExpansionGPTAnalysis: KeywordExpansionGPTAnalysis | undefined,
   contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
-  adAnalysis?: AdAnalysisResult
+  adAnalysis?: AdAnalysisResult,
+  shoppingAnalysis?: ShoppingSearchAnalysisResult,
+  brandComparison?: BrandComparisonResult
 ): string {
-  let summary = '';
+  // 분석 목적 컨텍스트 추가
+  const analysisContext: Record<KeywordType, string> = {
+    general: '📋 분석 목적: 검색광고 캠페인 최적화를 위한 키워드/광고 전략 수립',
+    shopping: '🛒 분석 목적: 네이버 쇼핑 상품 판매 최적화를 위한 시장/가격/경쟁 전략 수립',
+    brand: '🏷️ 분석 목적: 브랜드 경쟁력 강화를 위한 포지셔닝/차별화 전략 수립',
+  };
+
+  let summary = `# ${analysisContext[keywordType]}\n\n`;
 
   // 키워드 확장 데이터 요약
   summary += '## 키워드 확장 분석 데이터\n\n';
@@ -180,8 +196,8 @@ function buildDataSummary(
     summary += `- 부정: ${Math.round(totalNegative / channelCount)}%\n\n`;
   }
 
-  // 광고 분석 데이터 요약
-  if (adAnalysis) {
+  // 광고 분석 데이터 요약 (일반/브랜드 유형만)
+  if (adAnalysis && (keywordType === 'general' || keywordType === 'brand')) {
     summary += '## 광고 분석 데이터\n\n';
     summary += `### 자사 광고 현황\n`;
     summary += `- 현재 순위: ${adAnalysis.ourAd.rank > 0 ? `${adAnalysis.ourAd.rank}위` : '미노출'}\n`;
@@ -199,22 +215,149 @@ function buildDataSummary(
     });
   }
 
+  // 쇼핑 검색 분석 데이터 요약 (쇼핑 유형)
+  if (shoppingAnalysis && keywordType === 'shopping') {
+    summary += '\n## 쇼핑 검색 분석 데이터\n\n';
+    summary += `### 가격대 분석\n${shoppingAnalysis.gptAnalysis.priceAnalysis}\n\n`;
+    summary += `### 주요 브랜드/판매처\n${shoppingAnalysis.gptAnalysis.topBrands}\n\n`;
+    summary += `### 상품 특성\n${shoppingAnalysis.gptAnalysis.productFeatures}\n\n`;
+    summary += `### 소비자 구매 결정 요인\n${shoppingAnalysis.gptAnalysis.purchaseFactors}\n\n`;
+    summary += `### 시장 포지셔닝 전략\n${shoppingAnalysis.gptAnalysis.marketPositioning}\n\n`;
+    if (shoppingAnalysis.gptAnalysis.recommendations?.length > 0) {
+      summary += `### 마케팅 추천 사항\n`;
+      shoppingAnalysis.gptAnalysis.recommendations.forEach((rec, idx) => {
+        summary += `${idx + 1}. ${rec}\n`;
+      });
+    }
+  }
+
+  // 브랜드 비교 데이터 요약 (브랜드 유형)
+  if (brandComparison && keywordType === 'brand') {
+    summary += '\n## 브랜드 비교 분석 데이터\n\n';
+
+    // 자사 브랜드 상세
+    const ownBrand = brandComparison.ownBrand;
+    summary += `### 자사 브랜드: ${ownBrand.brandKeyword}\n`;
+    if (ownBrand.keywordExpansion?.keywordList) {
+      const ownKeywords = ownBrand.keywordExpansion.keywordList;
+      summary += `- 연관 키워드 수: ${ownKeywords.length}개\n`;
+      if (ownKeywords.length > 0) {
+        summary += `- 주요 연관 키워드: ${ownKeywords.slice(0, 10).map((k: any) => k.relKeyword).join(', ')}\n`;
+      }
+    }
+    // 자사 브랜드 감성 분석
+    if (ownBrand.contentAnalysis) {
+      const channels = ['blog', 'cafe', 'youtube', 'news'] as const;
+      let totalPositive = 0, totalNegative = 0, channelCount = 0;
+      channels.forEach(ch => {
+        const data = ownBrand.contentAnalysis?.[ch];
+        if (data?.sentiment) {
+          totalPositive += data.sentiment.positive || 0;
+          totalNegative += data.sentiment.negative || 0;
+          channelCount++;
+        }
+      });
+      if (channelCount > 0) {
+        summary += `- 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
+      }
+    }
+
+    // 경쟁사 브랜드들
+    summary += '\n### 경쟁사 브랜드 비교\n';
+    brandComparison.competitors.forEach((comp: any, idx: number) => {
+      summary += `\n${idx + 1}. ${comp.brandKeyword}\n`;
+      if (comp.keywordExpansion?.keywordList) {
+        const compKeywords = comp.keywordExpansion.keywordList;
+        summary += `   - 연관 키워드 수: ${compKeywords.length}개\n`;
+        if (compKeywords.length > 0) {
+          summary += `   - 주요 연관 키워드: ${compKeywords.slice(0, 5).map((k: any) => k.relKeyword).join(', ')}\n`;
+        }
+      }
+      // 경쟁사 감성 분석
+      if (comp.contentAnalysis) {
+        const channels = ['blog', 'cafe', 'youtube', 'news'] as const;
+        let totalPositive = 0, totalNegative = 0, channelCount = 0;
+        channels.forEach(ch => {
+          const data = comp.contentAnalysis?.[ch];
+          if (data?.sentiment) {
+            totalPositive += data.sentiment.positive || 0;
+            totalNegative += data.sentiment.negative || 0;
+            channelCount++;
+          }
+        });
+        if (channelCount > 0) {
+          summary += `   - 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
+        }
+      }
+    });
+
+    // 브랜드 간 비교 인사이트
+    summary += '\n### 브랜드 경쟁 구도 요약\n';
+    const allBrands = [ownBrand, ...brandComparison.competitors];
+    const brandKeywordCounts = allBrands.map((b: any) => ({
+      name: b.brandKeyword,
+      count: b.keywordExpansion?.keywordList?.length || 0,
+    })).sort((a, b) => b.count - a.count);
+    summary += `- 연관 키워드 수 순위: ${brandKeywordCounts.map((b, i) => `${i + 1}. ${b.name}(${b.count}개)`).join(', ')}\n`;
+  }
+
   return summary;
 }
 
 // GPT를 사용하여 종합 리포트 생성
 async function generateIntegratedReport(
   keyword: string,
+  keywordType: KeywordType,
   companyName: string | undefined,
   dataSummary: string,
   keywordExpansion: KeywordExpansionResult,
-  contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult }
+  contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
+  shoppingAnalysis?: ShoppingSearchAnalysisResult
 ): Promise<IntegratedReportData> {
 
   const totalVolume = calculateTotalSearchVolume(keywordExpansion);
   const mobileShare = calculateMobileShare(keywordExpansion);
 
-  const systemPrompt = `당신은 디지털 마케팅 전략 컨설턴트입니다. 제공된 키워드 분석 데이터를 바탕으로 PPT 수준의 전문적인 마케팅 인텔리전스 리포트를 생성해주세요.
+  // 키워드 유형별 시스템 프롬프트 생성
+  const getSystemPrompt = (type: KeywordType): string => {
+    const basePrompt = `당신은 디지털 마케팅 전략 컨설턴트입니다. 제공된 키워드 분석 데이터를 바탕으로 PPT 수준의 전문적인 마케팅 인텔리전스 리포트를 생성해주세요.`;
+
+    const typeSpecificPrompt = {
+      general: `
+【검색광고 최적화 리포트】
+다음 관점에서 분석하세요:
+- 검색 의도(Search Intent) 분류 및 전환 가능성
+- 광고 경쟁 환경 및 입찰 전략 방향
+- 키워드별 광고 효율성 예측 (CTR, CVR)
+- 랜딩페이지 및 광고 카피 최적화 방향
+- 콘텐츠 마케팅과 검색광고 연계 전략
+핵심 질문: "이 키워드로 검색광고를 집행할 때 ROI를 어떻게 극대화할 것인가"`,
+
+      shopping: `
+【이커머스 판매 최적화 리포트】
+다음 관점에서 분석하세요:
+- 가격 경쟁력 및 가격대별 시장 포지셔닝
+- 쇼핑 검색 결과 상위 노출 전략
+- 상품 차별화 포인트 및 셀링포인트
+- 리뷰/평점 관리 전략
+- 프로모션 및 할인 전략
+핵심 질문: "이 상품을 네이버 쇼핑에서 어떻게 더 잘 팔 것인가"`,
+
+      brand: `
+【브랜드 경쟁력 분석 리포트】
+다음 관점에서 분석하세요:
+- 자사 브랜드 vs 경쟁 브랜드 검색량/인지도 비교
+- 브랜드별 소비자 인식 및 연관 이미지
+- 브랜드 키워드 점유율(SOV) 분석
+- 경쟁 브랜드 대비 강점/약점
+- 브랜드 포지셔닝 및 차별화 전략
+핵심 질문: "우리 브랜드가 경쟁사 대비 어떤 위치이며, 어떻게 차별화할 것인가"`,
+    };
+
+    return basePrompt + typeSpecificPrompt[type];
+  };
+
+  const systemPrompt = getSystemPrompt(keywordType) + `
 
 리포트는 다음 구조로 작성해야 합니다:
 
@@ -262,7 +405,15 @@ async function generateIntegratedReport(
 
 응답은 반드시 아래 JSON 형식으로 제공해주세요. 모든 텍스트는 한국어로, 전문적이고 구체적으로 작성하세요. 수치는 제공된 데이터를 기반으로 정확하게 인용하세요.`;
 
-  const userPrompt = `다음은 "${keyword}" 키워드에 대한 분석 데이터입니다.${companyName ? ` (분석 대상 업체: ${companyName})` : ''}
+  const analysisTypeLabel: Record<KeywordType, string> = {
+    general: '검색광고 최적화',
+    shopping: '쇼핑 마케팅',
+    brand: '브랜드 경쟁력',
+  };
+
+  const userPrompt = `다음은 "${keyword}" 키워드에 대한 【${analysisTypeLabel[keywordType]} 분석】 데이터입니다.
+분석 유형: ${keywordType.toUpperCase()} (${analysisTypeLabel[keywordType]})
+${companyName ? `분석 대상 업체: ${companyName}` : ''}
 
 === 핵심 수치 ===
 - 총 월간 검색량: ${totalVolume.toLocaleString()}건

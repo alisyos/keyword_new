@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Head from 'next/head';
 import axios from 'axios';
 import {
@@ -9,11 +9,14 @@ import {
   KeywordExpansionGPTAnalysis,
   KeywordAnalysisResult,
   AdAnalysisResult,
+  ShoppingSearchAnalysisResult,
+  BrandComparisonResult,
   ContentType,
   WizardStep,
+  KeywordType,
   initialAnalysisState,
   channelNames,
-  stepInfo,
+  getStepInfo,
 } from '../types/integrated-analysis';
 
 // ===== 로딩 모달 컴포넌트 =====
@@ -38,16 +41,19 @@ const LoadingModal: React.FC<LoadingModalProps> = ({ isOpen, message }) => {
 interface StepIndicatorProps {
   currentStep: WizardStep;
   completedSteps: WizardStep[];
+  keywordType: KeywordType;
   onStepClick: (step: WizardStep) => void;
 }
 
-const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, completedSteps, onStepClick }) => {
+const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, completedSteps, keywordType, onStepClick }) => {
+  const stepInfoList = useMemo(() => getStepInfo(keywordType), [keywordType]);
+
   return (
     <div className="flex items-center justify-center mb-8">
-      {stepInfo.map((info, index) => {
+      {stepInfoList.map((info, index) => {
         const isCompleted = completedSteps.includes(info.step);
         const isCurrent = currentStep === info.step;
-        const isLast = index === stepInfo.length - 1;
+        const isLast = index === stepInfoList.length - 1;
         // 클릭 가능 조건: 완료된 단계 또는 현재 단계
         const isClickable = isCompleted || isCurrent;
 
@@ -107,25 +113,63 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, completedSte
 // ===== Step 1: 키워드 입력 =====
 interface Step1Props {
   keyword: string;
+  keywordType: KeywordType;
   companyName: string;
+  competitorBrands: string[];
   onKeywordChange: (value: string) => void;
+  onKeywordTypeChange: (type: KeywordType) => void;
   onCompanyNameChange: (value: string) => void;
+  onCompetitorBrandsChange: (brands: string[]) => void;
   onNext: () => void;
 }
 
+const keywordTypeInfo: Record<KeywordType, { label: string; description: string; icon: string }> = {
+  general: { label: '일반 키워드', description: '제품, 서비스, 일반 검색어', icon: '🔍' },
+  shopping: { label: '쇼핑 키워드', description: '상품, 구매 관련 키워드', icon: '🛒' },
+  brand: { label: '브랜드 키워드', description: '자사/경쟁사 브랜드 비교', icon: '🏢' },
+};
+
 const Step1KeywordInput: React.FC<Step1Props> = ({
   keyword,
+  keywordType,
   companyName,
+  competitorBrands,
   onKeywordChange,
+  onKeywordTypeChange,
   onCompanyNameChange,
+  onCompetitorBrandsChange,
   onNext,
 }) => {
   const [error, setError] = useState<string | null>(null);
 
+  const handleAddCompetitor = () => {
+    if (competitorBrands.length < 3) {
+      onCompetitorBrandsChange([...competitorBrands, '']);
+    }
+  };
+
+  const handleRemoveCompetitor = (index: number) => {
+    const newBrands = competitorBrands.filter((_, i) => i !== index);
+    onCompetitorBrandsChange(newBrands);
+  };
+
+  const handleCompetitorChange = (index: number, value: string) => {
+    const newBrands = [...competitorBrands];
+    newBrands[index] = value;
+    onCompetitorBrandsChange(newBrands);
+  };
+
   const handleNext = () => {
     if (!keyword.trim()) {
-      setError('분석할 키워드를 입력해주세요.');
+      setError(keywordType === 'brand' ? '자사 브랜드 키워드를 입력해주세요.' : '분석할 키워드를 입력해주세요.');
       return;
+    }
+    if (keywordType === 'brand') {
+      const validCompetitors = competitorBrands.filter(b => b.trim());
+      if (validCompetitors.length === 0) {
+        setError('최소 1개의 경쟁사 브랜드 키워드를 입력해주세요.');
+        return;
+      }
     }
     setError(null);
     onNext();
@@ -139,35 +183,120 @@ const Step1KeywordInput: React.FC<Step1Props> = ({
       </div>
 
       <div className="space-y-6">
+        {/* 키워드 유형 선택 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            키워드 유형 선택 <span className="text-red-500">*</span>
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {(Object.keys(keywordTypeInfo) as KeywordType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onKeywordTypeChange(type)}
+                className={`p-4 rounded-lg border-2 transition-all text-center ${
+                  keywordType === type
+                    ? 'border-blue-500 bg-blue-50 shadow-md'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="text-2xl mb-1">{keywordTypeInfo[type].icon}</div>
+                <div className={`text-sm font-semibold ${keywordType === type ? 'text-blue-700' : 'text-gray-700'}`}>
+                  {keywordTypeInfo[type].label}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{keywordTypeInfo[type].description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 키워드 입력 (일반/쇼핑) 또는 자사 브랜드 (브랜드) */}
         <div>
           <label htmlFor="keyword" className="block text-sm font-medium text-gray-700 mb-2">
-            분석 키워드 <span className="text-red-500">*</span>
+            {keywordType === 'brand' ? '자사 브랜드 키워드' : '분석 키워드'} <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             id="keyword"
             value={keyword}
             onChange={(e) => onKeywordChange(e.target.value)}
-            placeholder="예: 자동차보험, 다이어트 도시락"
+            placeholder={keywordType === 'brand' ? '예: 삼성전자, 현대자동차' : '예: 자동차보험, 다이어트 도시락'}
             className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
             onKeyDown={(e) => e.key === 'Enter' && handleNext()}
           />
         </div>
 
-        <div>
-          <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-2">
-            귀사 업체명 <span className="text-gray-400">(선택)</span>
-          </label>
-          <input
-            type="text"
-            id="companyName"
-            value={companyName}
-            onChange={(e) => onCompanyNameChange(e.target.value)}
-            placeholder="예: 건강한끼, ABC보험"
-            className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-          <p className="mt-1 text-sm text-gray-500">광고 분석 시 귀사의 광고 순위를 확인하는 데 사용됩니다.</p>
-        </div>
+        {/* 브랜드 유형: 경쟁사 브랜드 입력 */}
+        {keywordType === 'brand' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">
+                경쟁사 브랜드 키워드 <span className="text-red-500">*</span>
+                <span className="text-gray-400 font-normal ml-1">(최소 1개, 최대 3개)</span>
+              </label>
+              {competitorBrands.length < 3 && (
+                <button
+                  type="button"
+                  onClick={handleAddCompetitor}
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  경쟁사 추가
+                </button>
+              )}
+            </div>
+            {competitorBrands.length === 0 && (
+              <button
+                type="button"
+                onClick={handleAddCompetitor}
+                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              >
+                + 경쟁사 브랜드 추가
+              </button>
+            )}
+            {competitorBrands.map((brand, index) => (
+              <div key={index} className="flex gap-2">
+                <input
+                  type="text"
+                  value={brand}
+                  onChange={(e) => handleCompetitorChange(index, e.target.value)}
+                  placeholder={`경쟁사 ${index + 1} 브랜드 키워드`}
+                  className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveCompetitor(index)}
+                  className="px-3 text-gray-400 hover:text-red-500 transition-colors"
+                  title="삭제"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 업체명 (일반/쇼핑 유형만 표시) */}
+        {keywordType !== 'brand' && (
+          <div>
+            <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-2">
+              귀사 업체명 <span className="text-gray-400">(선택)</span>
+            </label>
+            <input
+              type="text"
+              id="companyName"
+              value={companyName}
+              onChange={(e) => onCompanyNameChange(e.target.value)}
+              placeholder="예: 건강한끼, ABC보험"
+              className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="mt-1 text-sm text-gray-500">광고 분석 시 귀사의 광고 순위를 확인하는 데 사용됩니다.</p>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -540,6 +669,254 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
   );
 };
 
+// ===== Step 2: 브랜드별 키워드 확장 (브랜드 유형용) =====
+interface Step2BrandProps {
+  ownBrand: string;
+  competitorBrands: string[];
+  brandComparison: BrandComparisonResult | null;
+  loading: boolean;
+  onAnalyze: () => void;
+  onReanalyze: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+}
+
+const Step2BrandComparison: React.FC<Step2BrandProps> = ({
+  ownBrand,
+  competitorBrands,
+  brandComparison,
+  loading,
+  onAnalyze,
+  onReanalyze,
+  onPrev,
+  onNext,
+}) => {
+  const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
+
+  const validCompetitors = competitorBrands.filter(b => b.trim());
+  const allBrands = [ownBrand, ...validCompetitors];
+
+  const getBrandData = (brandKeyword: string) => {
+    if (!brandComparison) return null;
+    if (brandComparison.ownBrand.brandKeyword === brandKeyword) {
+      return brandComparison.ownBrand;
+    }
+    return brandComparison.competitors.find(c => c.brandKeyword === brandKeyword);
+  };
+
+  const calculateTotalVolume = (data: KeywordExpansionResult | null) => {
+    if (!data?.keywordList) return 0;
+    return data.keywordList.reduce((sum, kw) => {
+      const pc = kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0;
+      const mobile = kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0;
+      return sum + pc + mobile;
+    }, 0);
+  };
+
+  return (
+    <div>
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">브랜드별 키워드 확장 분석</h2>
+        <p className="text-gray-600">자사 브랜드와 경쟁사 브랜드의 연관 키워드를 비교 분석합니다.</p>
+      </div>
+
+      {!brandComparison && !loading && (
+        <div className="text-center py-12">
+          <div className="mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg mb-4">
+              <span className="text-blue-600 font-semibold">자사:</span>
+              <span className="text-gray-800">{ownBrand}</span>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {validCompetitors.map((brand, idx) => (
+                <span key={idx} className="px-3 py-1 bg-gray-100 rounded-lg text-sm text-gray-700">
+                  경쟁사 {idx + 1}: {brand}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={onAnalyze}
+            className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all text-lg"
+          >
+            브랜드별 키워드 확장 분석 시작
+          </button>
+        </div>
+      )}
+
+      {brandComparison && !loading && (
+        <>
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={onReanalyze}
+              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              다시 분석
+            </button>
+          </div>
+
+          {/* 브랜드 비교 요약 카드 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {allBrands.map((brand, idx) => {
+              const data = getBrandData(brand);
+              const isOwn = idx === 0;
+              const totalVolume = calculateTotalVolume(data?.keywordExpansion || null);
+              const keywordCount = data?.keywordExpansion?.keywordList?.length || 0;
+
+              return (
+                <div
+                  key={brand}
+                  className={`rounded-lg border-2 p-4 cursor-pointer transition-all hover:shadow-md ${
+                    isOwn
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  } ${expandedBrand === brand ? 'ring-2 ring-blue-400' : ''}`}
+                  onClick={() => setExpandedBrand(expandedBrand === brand ? null : brand)}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      {isOwn && (
+                        <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded">자사</span>
+                      )}
+                      <span className={`font-semibold ${isOwn ? 'text-blue-800' : 'text-gray-800'}`}>
+                        {brand}
+                      </span>
+                    </div>
+                    <svg
+                      className={`w-5 h-5 text-gray-400 transition-transform ${expandedBrand === brand ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center p-2 bg-white rounded-lg">
+                      <div className="text-lg font-bold text-indigo-600">{keywordCount}</div>
+                      <div className="text-xs text-gray-500">연관 키워드</div>
+                    </div>
+                    <div className="text-center p-2 bg-white rounded-lg">
+                      <div className="text-lg font-bold text-emerald-600">{totalVolume.toLocaleString()}</div>
+                      <div className="text-xs text-gray-500">총 검색량</div>
+                    </div>
+                  </div>
+
+                  {!data?.keywordExpansion && (
+                    <div className="mt-3 text-center text-sm text-red-500">분석 실패</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 선택된 브랜드의 상세 키워드 목록 */}
+          {expandedBrand && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+              <h3 className="font-semibold text-gray-800 mb-4">
+                "{expandedBrand}" 상위 연관 키워드
+              </h3>
+              {getBrandData(expandedBrand)?.keywordExpansion?.keywordList ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">키워드</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600">PC검색량</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-gray-600">모바일검색량</th>
+                        <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600">경쟁도</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {getBrandData(expandedBrand)!.keywordExpansion!.keywordList.slice(0, 15).map((kw, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 text-sm text-gray-800">{kw.relKeyword}</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">
+                            {kw.monthlyPcQcCnt === '< 10' ? '10 미만' : parseInt(kw.monthlyPcQcCnt).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-600">
+                            {kw.monthlyMobileQcCnt === '< 10' ? '10 미만' : parseInt(kw.monthlyMobileQcCnt).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                              kw.compIdx === '높음' ? 'bg-red-100 text-red-700' :
+                              kw.compIdx === '중간' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {kw.compIdx}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">키워드 데이터가 없습니다.</p>
+              )}
+            </div>
+          )}
+
+          {/* 브랜드 검색량 비교 차트 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-800 mb-4">브랜드별 총 검색량 비교</h3>
+            <div className="space-y-3">
+              {allBrands.map((brand, idx) => {
+                const data = getBrandData(brand);
+                const totalVolume = calculateTotalVolume(data?.keywordExpansion || null);
+                const maxVolume = Math.max(...allBrands.map(b => calculateTotalVolume(getBrandData(b)?.keywordExpansion || null)));
+                const percentage = maxVolume > 0 ? (totalVolume / maxVolume) * 100 : 0;
+                const isOwn = idx === 0;
+
+                return (
+                  <div key={brand} className="flex items-center gap-3">
+                    <div className="w-24 text-sm font-medium text-gray-700 truncate" title={brand}>
+                      {isOwn && <span className="text-blue-600">●</span>} {brand}
+                    </div>
+                    <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${isOwn ? 'bg-blue-500' : 'bg-gray-400'}`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                    <div className="w-20 text-right text-sm font-semibold text-gray-700">
+                      {totalVolume.toLocaleString()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="flex justify-between pt-6">
+        <button
+          onClick={onPrev}
+          className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+        >
+          ← 이전
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!brandComparison}
+          className={`px-8 py-3 font-semibold rounded-lg shadow-md transition-all ${
+            brandComparison
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          다음 단계로
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ===== Step 3: 콘텐츠 분석 =====
 interface Step3Props {
   keyword: string;
@@ -821,6 +1198,259 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
   );
 };
 
+// ===== Step 3: 브랜드별 콘텐츠 분석 (브랜드 유형용) =====
+interface Step3BrandProps {
+  brandComparison: BrandComparisonResult | null;
+  selectedChannels: ContentType[];
+  loading: boolean;
+  onChannelToggle: (channel: ContentType) => void;
+  onAnalyze: () => void;
+  onReanalyze: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+}
+
+const Step3BrandComparison: React.FC<Step3BrandProps> = ({
+  brandComparison,
+  selectedChannels,
+  loading,
+  onChannelToggle,
+  onAnalyze,
+  onReanalyze,
+  onPrev,
+  onNext,
+}) => {
+  const [activeTab, setActiveTab] = useState<ContentType>('blog');
+
+  const hasAnyResult = brandComparison?.ownBrand?.contentAnalysis &&
+    Object.values(brandComparison.ownBrand.contentAnalysis).some(Boolean);
+
+  const allBrands = brandComparison
+    ? [brandComparison.ownBrand, ...brandComparison.competitors]
+    : [];
+
+  const getSentimentScore = (contentAnalysis: { blog: KeywordAnalysisResult | null; cafe: KeywordAnalysisResult | null; youtube: KeywordAnalysisResult | null; news: KeywordAnalysisResult | null } | null, channel: ContentType) => {
+    if (!contentAnalysis || !contentAnalysis[channel]?.sentiment) return null;
+    return contentAnalysis[channel]!.sentiment;
+  };
+
+  const getOverallSentiment = (contentAnalysis: { blog: KeywordAnalysisResult | null; cafe: KeywordAnalysisResult | null; youtube: KeywordAnalysisResult | null; news: KeywordAnalysisResult | null } | null) => {
+    if (!contentAnalysis) return { positive: 0, negative: 0, neutral: 0 };
+    let totalPos = 0, totalNeg = 0, totalNeu = 0, count = 0;
+    selectedChannels.forEach(ch => {
+      const sentiment = contentAnalysis[ch]?.sentiment;
+      if (sentiment) {
+        totalPos += sentiment.positive;
+        totalNeg += sentiment.negative;
+        totalNeu += sentiment.neutral;
+        count++;
+      }
+    });
+    if (count === 0) return { positive: 0, negative: 0, neutral: 0 };
+    return {
+      positive: Math.round(totalPos / count),
+      negative: Math.round(totalNeg / count),
+      neutral: Math.round(totalNeu / count),
+    };
+  };
+
+  return (
+    <div>
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">브랜드별 콘텐츠 분석</h2>
+        <p className="text-gray-600">자사 브랜드와 경쟁사 브랜드의 채널별 콘텐츠를 비교 분석합니다.</p>
+      </div>
+
+      {/* 채널 선택 */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-3">분석할 채널 선택</label>
+        <div className="flex flex-wrap gap-3">
+          {(Object.keys(channelNames) as ContentType[]).map((channel) => (
+            <button
+              key={channel}
+              onClick={() => onChannelToggle(channel)}
+              disabled={loading}
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                selectedChannels.includes(channel)
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {channelNames[channel]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 분석 시작 버튼 */}
+      {!hasAnyResult && !loading && selectedChannels.length > 0 && (
+        <div className="text-center py-8">
+          <button
+            onClick={onAnalyze}
+            className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all text-lg"
+          >
+            브랜드별 콘텐츠 분석 시작 ({allBrands.length}개 브랜드 × {selectedChannels.length}개 채널)
+          </button>
+        </div>
+      )}
+
+      {/* 결과 표시 */}
+      {hasAnyResult && !loading && (
+        <div>
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={onReanalyze}
+              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              다시 분석
+            </button>
+          </div>
+
+          {/* 브랜드별 전체 감성 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-4">브랜드별 전체 감성 비교</h3>
+            <div className="space-y-4">
+              {allBrands.map((brand, idx) => {
+                const overall = getOverallSentiment(brand.contentAnalysis);
+                const isOwn = brand.isOwnBrand;
+
+                return (
+                  <div key={brand.brandKeyword} className="flex items-center gap-4">
+                    <div className="w-28 flex items-center gap-2">
+                      {isOwn && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+                      <span className={`text-sm font-medium truncate ${isOwn ? 'text-blue-700' : 'text-gray-700'}`}>
+                        {brand.brandKeyword}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex h-6 rounded-full overflow-hidden bg-gray-100">
+                        <div className="bg-green-500 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${overall.positive}%` }}>
+                          {overall.positive > 10 && `${overall.positive}%`}
+                        </div>
+                        <div className="bg-gray-400 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${overall.neutral}%` }}>
+                          {overall.neutral > 10 && `${overall.neutral}%`}
+                        </div>
+                        <div className="bg-red-500 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${overall.negative}%` }}>
+                          {overall.negative > 10 && `${overall.negative}%`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="w-32 text-xs text-gray-500 text-right">
+                      긍정 {overall.positive}% / 부정 {overall.negative}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-center gap-6 mt-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span> 긍정</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-400 rounded"></span> 중립</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span> 부정</span>
+            </div>
+          </div>
+
+          {/* 채널별 탭 */}
+          <div className="border-b border-gray-200 mb-6">
+            <nav className="flex -mb-px overflow-x-auto">
+              {selectedChannels.map((channel) => (
+                <button
+                  key={channel}
+                  onClick={() => setActiveTab(channel)}
+                  className={`px-6 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                    activeTab === channel
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  {channelNames[channel]}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* 채널별 브랜드 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-800 mb-4">{channelNames[activeTab]} 채널 브랜드 비교</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">브랜드</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">긍정</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">중립</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">부정</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">주요 키워드</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allBrands.map((brand) => {
+                    const sentiment = getSentimentScore(brand.contentAnalysis, activeTab);
+                    const keywords = brand.contentAnalysis?.[activeTab]?.keywords?.slice(0, 5) || [];
+
+                    return (
+                      <tr key={brand.brandKeyword} className={brand.isOwnBrand ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {brand.isOwnBrand && <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded">자사</span>}
+                            <span className="text-sm font-medium text-gray-800">{brand.brandKeyword}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-sm font-semibold text-green-600">{sentiment?.positive || 0}%</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-sm font-semibold text-gray-500">{sentiment?.neutral || 0}%</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-sm font-semibold text-red-600">{sentiment?.negative || 0}%</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {keywords.length > 0 ? keywords.map((kw, idx) => (
+                              <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
+                                {kw.keyword}
+                              </span>
+                            )) : (
+                              <span className="text-xs text-gray-400">데이터 없음</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between pt-6">
+        <button
+          onClick={onPrev}
+          className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+        >
+          ← 이전
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!hasAnyResult}
+          className={`px-8 py-3 font-semibold rounded-lg shadow-md transition-all ${
+            hasAnyResult
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          다음 단계로
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ===== Step 4: 광고 분석 =====
 interface Step4Props {
   keyword: string;
@@ -1063,6 +1693,166 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-start pt-6">
+        <button
+          onClick={onPrev}
+          className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+        >
+          ← 이전
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ===== Step 4: 쇼핑 검색 분석 (쇼핑 유형용) =====
+interface Step4ShoppingProps {
+  keyword: string;
+  shoppingAnalysis: ShoppingSearchAnalysisResult | null;
+  loading: boolean;
+  shoppingText: string;
+  onShoppingTextChange: (text: string) => void;
+  onAnalyze: () => void;
+  onReanalyze: () => void;
+  onPrev: () => void;
+}
+
+const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
+  keyword,
+  shoppingAnalysis,
+  loading,
+  shoppingText,
+  onShoppingTextChange,
+  onAnalyze,
+  onReanalyze,
+  onPrev,
+}) => {
+  return (
+    <div>
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">쇼핑 검색 분석</h2>
+        <p className="text-gray-600">네이버 쇼핑 검색 결과를 분석하여 이커머스 마케팅 인사이트를 제공합니다.</p>
+      </div>
+
+      {!shoppingAnalysis && !loading && (
+        <>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <div className="text-2xl">💡</div>
+              <div>
+                <p className="text-sm text-blue-800 font-medium mb-1">분석 방법</p>
+                <ol className="text-sm text-blue-700 list-decimal list-inside space-y-1">
+                  <li>네이버에서 "{keyword}" 검색</li>
+                  <li>쇼핑 탭 클릭</li>
+                  <li>검색 결과를 드래그하여 선택 후 복사 (Ctrl+C)</li>
+                  <li>아래 입력창에 붙여넣기 (Ctrl+V)</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              쇼핑 검색 결과 붙여넣기 <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={shoppingText}
+              onChange={(e) => onShoppingTextChange(e.target.value)}
+              placeholder="네이버 쇼핑 검색 결과를 복사하여 붙여넣어 주세요.&#10;&#10;예시:&#10;[상품명] 다이어트 도시락 냉동 식단 ...&#10;가격: 29,900원&#10;리뷰: 4.8 (1,234)&#10;배송: 무료배송"
+              className="w-full h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono resize-y"
+            />
+            <p className="mt-2 text-xs text-gray-500">
+              상품명, 가격, 리뷰, 판매처 등의 정보가 포함될수록 분석 품질이 향상됩니다.
+            </p>
+          </div>
+
+          <div className="flex justify-center gap-4 mt-6">
+            <button
+              onClick={onAnalyze}
+              disabled={!shoppingText.trim()}
+              className={`px-6 py-3 font-semibold rounded-lg transition-all ${
+                shoppingText.trim()
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md hover:shadow-lg'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              쇼핑 검색 분석하기
+            </button>
+          </div>
+        </>
+      )}
+
+      {shoppingAnalysis && !loading && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button
+              onClick={onReanalyze}
+              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              다시 분석
+            </button>
+          </div>
+
+          {/* 쇼핑 분석 결과 */}
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-4">
+            <h3 className="text-sm font-bold text-emerald-800 flex items-center mb-4">
+              <span className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white text-xs mr-2">🛒</span>
+              쇼핑 검색 분석 결과
+            </h3>
+
+            <div className="space-y-3">
+              {/* 가격 분석 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-emerald-500">
+                <div className="text-sm font-bold text-emerald-700 mb-2">💰 가격대 분석</div>
+                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.priceAnalysis}</p>
+              </div>
+
+              {/* 주요 브랜드 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
+                <div className="text-sm font-bold text-blue-700 mb-2">🏷️ 주요 브랜드/판매처</div>
+                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.topBrands}</p>
+              </div>
+
+              {/* 상품 특성 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-violet-500">
+                <div className="text-sm font-bold text-violet-700 mb-2">📦 상품 특성 및 차별화 포인트</div>
+                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.productFeatures}</p>
+              </div>
+
+              {/* 구매 결정 요인 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-orange-500">
+                <div className="text-sm font-bold text-orange-700 mb-2">🎯 소비자 구매 결정 요인</div>
+                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.purchaseFactors}</p>
+              </div>
+
+              {/* 시장 포지셔닝 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
+                <div className="text-sm font-bold text-pink-700 mb-2">📈 시장 포지셔닝 전략</div>
+                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.marketPositioning}</p>
+              </div>
+
+              {/* 마케팅 추천 */}
+              <div className="bg-white rounded-lg p-4 border-l-4 border-amber-500">
+                <div className="text-sm font-bold text-amber-700 mb-2">✨ 마케팅 추천 사항</div>
+                <ul className="space-y-2">
+                  {shoppingAnalysis.gptAnalysis.recommendations.map((rec, idx) => (
+                    <li key={idx} className="text-sm text-gray-700 flex items-start">
+                      <span className="w-5 h-5 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0">
+                        {idx + 1}
+                      </span>
+                      {rec}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
@@ -1625,7 +2415,11 @@ export default function IntegratedAnalysisPage() {
 
     // 각 단계별 데이터 리셋
     if (fromStep <= 2) {
-      updateState({ keywordExpansion: null, keywordExpansionGPTAnalysis: null });
+      updateState({
+        keywordExpansion: null,
+        keywordExpansionGPTAnalysis: null,
+        brandComparison: null,
+      });
     }
     if (fromStep <= 3) {
       updateState({
@@ -1633,7 +2427,13 @@ export default function IntegratedAnalysisPage() {
       });
     }
     if (fromStep <= 4) {
-      updateState({ adAnalysis: null, adText: '', skipAdAnalysis: false });
+      updateState({
+        adAnalysis: null,
+        adText: '',
+        skipAdAnalysis: false,
+        shoppingAnalysis: null,
+        shoppingText: '',
+      });
       setSelectedFile(null);
     }
     if (fromStep <= 5) {
@@ -1648,6 +2448,27 @@ export default function IntegratedAnalysisPage() {
       resetFromStep(2);
     }
     updateState({ keyword: newKeyword });
+  };
+
+  // 키워드 유형 변경 핸들러 (변경 시 하위 단계 리셋)
+  const handleKeywordTypeChange = (newType: KeywordType) => {
+    if (analysisState.keywordType !== newType) {
+      resetFromStep(2);
+      // 유형별 특수 데이터 초기화
+      const typeSpecificReset: Partial<IntegratedAnalysisState> = {
+        keywordType: newType,
+        shoppingAnalysis: null,
+        shoppingText: '',
+        brandComparison: null,
+      };
+      // 브랜드 유형으로 변경 시 경쟁사 브랜드 배열 초기화
+      if (newType === 'brand') {
+        typeSpecificReset.competitorBrands = analysisState.competitorBrands.length === 0 ? [''] : analysisState.competitorBrands;
+      } else {
+        typeSpecificReset.competitorBrands = [];
+      }
+      updateState(typeSpecificReset);
+    }
   };
 
   // 단계 표시기 클릭 핸들러
@@ -1687,6 +2508,7 @@ export default function IntegratedAnalysisPage() {
       const response = await axios.post('/api/keyword-expansion-analysis', {
         keyword: analysisState.keyword,
         keywordExpansion,
+        keywordType: analysisState.keywordType,
       });
       updateState({
         keywordExpansionGPTAnalysis: response.data.analysis,
@@ -1713,6 +2535,7 @@ export default function IntegratedAnalysisPage() {
         const response = await axios.post('/api/keyword-analysis', {
           keyword: analysisState.keyword,
           contentType: channel,
+          keywordType: analysisState.keywordType,
         });
         return { channel, data: response.data as KeywordAnalysisResult };
       } catch (err) {
@@ -1739,7 +2562,12 @@ export default function IntegratedAnalysisPage() {
 
   // Step 4: 광고 분석
   const handleAdAnalysis = async () => {
-    if (!analysisState.companyName) {
+    // 브랜드 유형: keyword가 업체명, 그 외: companyName 사용
+    const effectiveCompanyName = analysisState.keywordType === 'brand'
+      ? analysisState.keyword
+      : analysisState.companyName;
+
+    if (!effectiveCompanyName) {
       setError('광고 분석을 위해 업체명을 입력해주세요.');
       return;
     }
@@ -1749,7 +2577,7 @@ export default function IntegratedAnalysisPage() {
     try {
       const formData = new FormData();
       formData.append('keyword', analysisState.keyword);
-      formData.append('companyName', analysisState.companyName);
+      formData.append('companyName', effectiveCompanyName);
       formData.append('inputMode', analysisState.adInputMode);
 
       if (analysisState.adInputMode === 'text') {
@@ -1773,6 +2601,207 @@ export default function IntegratedAnalysisPage() {
     }
   };
 
+  // Step 2: 브랜드별 키워드 확장 분석 (브랜드 유형용)
+  const handleBrandKeywordExpansion = async () => {
+    updateState({ brandComparisonLoading: true });
+
+    try {
+      const validCompetitors = analysisState.competitorBrands.filter(b => b.trim());
+      const allBrands = [analysisState.keyword, ...validCompetitors];
+
+      // 모든 브랜드에 대해 병렬로 키워드 확장 API 호출
+      const results = await Promise.all(
+        allBrands.map(async (brand, index) => {
+          try {
+            const response = await axios.post('/api/keyword-expansion', { keyword: brand });
+            return {
+              brandKeyword: brand,
+              isOwnBrand: index === 0,
+              keywordExpansion: response.data.data as KeywordExpansionResult,
+              contentAnalysis: { blog: null, cafe: null, youtube: null, news: null },
+            };
+          } catch (err) {
+            console.error(`${brand} 키워드 확장 오류:`, err);
+            return {
+              brandKeyword: brand,
+              isOwnBrand: index === 0,
+              keywordExpansion: null,
+              contentAnalysis: { blog: null, cafe: null, youtube: null, news: null },
+            };
+          }
+        })
+      );
+
+      const ownBrandData = results[0];
+      const competitorData = results.slice(1);
+
+      // 자사 브랜드 키워드 확장 결과를 기본 keywordExpansion에도 저장 (리포트 생성용)
+      updateState({
+        brandComparison: {
+          ownBrand: ownBrandData,
+          competitors: competitorData,
+        },
+        keywordExpansion: ownBrandData.keywordExpansion,
+        brandComparisonLoading: false,
+      });
+
+      // GPT 분석도 자동 호출 (자사 브랜드 기준)
+      if (ownBrandData.keywordExpansion) {
+        await handleKeywordExpansionGPTAnalysis(ownBrandData.keywordExpansion);
+      }
+    } catch (err) {
+      console.error('브랜드 키워드 확장 오류:', err);
+      setError('브랜드 키워드 확장 분석 중 오류가 발생했습니다.');
+      updateState({ brandComparisonLoading: false });
+    }
+  };
+
+  // Step 3: 브랜드별 콘텐츠 분석 (브랜드 유형용)
+  const handleBrandContentAnalysis = async () => {
+    if (!analysisState.brandComparison) return;
+
+    const loadingState = { blog: true, cafe: true, youtube: true, news: true };
+    updateState({ contentAnalysisLoading: loadingState, brandComparisonLoading: true });
+
+    try {
+      const allBrands = [
+        analysisState.brandComparison.ownBrand,
+        ...analysisState.brandComparison.competitors,
+      ];
+
+      // 모든 브랜드 × 모든 채널에 대해 병렬 분석
+      const updatedBrands = await Promise.all(
+        allBrands.map(async (brand) => {
+          const channelResults = await Promise.all(
+            analysisState.selectedChannels.map(async (channel) => {
+              try {
+                const response = await axios.post('/api/keyword-analysis', {
+                  keyword: brand.brandKeyword,
+                  contentType: channel,
+                  keywordType: analysisState.keywordType,
+                });
+                return { channel, data: response.data as KeywordAnalysisResult };
+              } catch (err) {
+                console.error(`${brand.brandKeyword} ${channel} 분석 오류:`, err);
+                return { channel, data: null };
+              }
+            })
+          );
+
+          const contentAnalysis = { blog: null, cafe: null, youtube: null, news: null } as {
+            blog: KeywordAnalysisResult | null;
+            cafe: KeywordAnalysisResult | null;
+            youtube: KeywordAnalysisResult | null;
+            news: KeywordAnalysisResult | null;
+          };
+          channelResults.forEach(({ channel, data }) => {
+            contentAnalysis[channel] = data;
+          });
+
+          return { ...brand, contentAnalysis };
+        })
+      );
+
+      const ownBrandData = updatedBrands[0];
+      const competitorData = updatedBrands.slice(1);
+
+      // 자사 브랜드 콘텐츠 분석 결과를 기본 contentAnalysis에도 저장
+      updateState({
+        brandComparison: {
+          ownBrand: ownBrandData,
+          competitors: competitorData,
+        },
+        contentAnalysis: ownBrandData.contentAnalysis,
+        contentAnalysisLoading: { blog: false, cafe: false, youtube: false, news: false },
+        brandComparisonLoading: false,
+      });
+    } catch (err) {
+      console.error('브랜드 콘텐츠 분석 오류:', err);
+      setError('브랜드 콘텐츠 분석 중 오류가 발생했습니다.');
+      updateState({
+        contentAnalysisLoading: { blog: false, cafe: false, youtube: false, news: false },
+        brandComparisonLoading: false,
+      });
+    }
+  };
+
+  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용)
+  const handleShoppingAnalysis = async () => {
+    if (!analysisState.shoppingText.trim()) {
+      setError('쇼핑 검색 결과를 붙여넣어 주세요.');
+      return;
+    }
+
+    updateState({ shoppingAnalysisLoading: true });
+
+    try {
+      const response = await axios.post('/api/shopping-search-analysis', {
+        keyword: analysisState.keyword,
+        shoppingText: analysisState.shoppingText,
+      });
+
+      updateState({
+        shoppingAnalysis: response.data.analysis,
+        shoppingAnalysisLoading: false,
+      });
+    } catch (err) {
+      console.error('쇼핑 검색 분석 오류:', err);
+      setError('쇼핑 검색 분석 중 오류가 발생했습니다.');
+      updateState({ shoppingAnalysisLoading: false });
+    }
+  };
+
+  // 콘텐츠 분석 데이터 요약 (contentItems 제외하여 데이터 크기 축소)
+  const summarizeContentAnalysis = (content: KeywordAnalysisResult | null) => {
+    if (!content) return undefined;
+    return {
+      keywords: content.keywords?.slice(0, 15) || [],
+      sentiment: content.sentiment,
+      contentType: content.contentType,
+      // contentItems는 제외 (데이터 크기 축소)
+    };
+  };
+
+  // 키워드 확장 데이터 요약 (상위 30개만 유지)
+  const summarizeKeywordExpansion = (expansion: KeywordExpansionResult | null) => {
+    if (!expansion) return null;
+    return {
+      ...expansion,
+      keywordList: expansion.keywordList?.slice(0, 30) || [],
+    };
+  };
+
+  // 브랜드 비교 데이터 요약
+  const summarizeBrandComparison = (comparison: typeof analysisState.brandComparison) => {
+    if (!comparison) return undefined;
+    return {
+      ownBrand: {
+        brandKeyword: comparison.ownBrand.brandKeyword,
+        keywordExpansion: comparison.ownBrand.keywordExpansion
+          ? { keywordList: comparison.ownBrand.keywordExpansion.keywordList?.slice(0, 20) || [] }
+          : null,
+        contentAnalysis: {
+          blog: summarizeContentAnalysis(comparison.ownBrand.contentAnalysis?.blog || null),
+          cafe: summarizeContentAnalysis(comparison.ownBrand.contentAnalysis?.cafe || null),
+          youtube: summarizeContentAnalysis(comparison.ownBrand.contentAnalysis?.youtube || null),
+          news: summarizeContentAnalysis(comparison.ownBrand.contentAnalysis?.news || null),
+        },
+      },
+      competitors: comparison.competitors.map((comp) => ({
+        brandKeyword: comp.brandKeyword,
+        keywordExpansion: comp.keywordExpansion
+          ? { keywordList: comp.keywordExpansion.keywordList?.slice(0, 20) || [] }
+          : null,
+        contentAnalysis: {
+          blog: summarizeContentAnalysis(comp.contentAnalysis?.blog || null),
+          cafe: summarizeContentAnalysis(comp.contentAnalysis?.cafe || null),
+          youtube: summarizeContentAnalysis(comp.contentAnalysis?.youtube || null),
+          news: summarizeContentAnalysis(comp.contentAnalysis?.news || null),
+        },
+      })),
+    };
+  };
+
   // 종합 리포트 생성
   const handleGenerateReport = async () => {
     updateState({ reportLoading: true });
@@ -1784,18 +2813,22 @@ export default function IntegratedAnalysisPage() {
     }
 
     try {
+      // 데이터 요약하여 전송 (1MB 제한 방지)
       const requestData = {
         keyword: analysisState.keyword,
+        keywordType: analysisState.keywordType,
         companyName: analysisState.companyName || undefined,
-        keywordExpansion: analysisState.keywordExpansion,
+        keywordExpansion: summarizeKeywordExpansion(analysisState.keywordExpansion),
         keywordExpansionGPTAnalysis: analysisState.keywordExpansionGPTAnalysis || undefined,
         contentAnalysis: {
-          blog: analysisState.contentAnalysis.blog || undefined,
-          cafe: analysisState.contentAnalysis.cafe || undefined,
-          youtube: analysisState.contentAnalysis.youtube || undefined,
-          news: analysisState.contentAnalysis.news || undefined,
+          blog: summarizeContentAnalysis(analysisState.contentAnalysis.blog),
+          cafe: summarizeContentAnalysis(analysisState.contentAnalysis.cafe),
+          youtube: summarizeContentAnalysis(analysisState.contentAnalysis.youtube),
+          news: summarizeContentAnalysis(analysisState.contentAnalysis.news),
         },
         adAnalysis: analysisState.adAnalysis || undefined,
+        shoppingAnalysis: analysisState.shoppingAnalysis || undefined,
+        brandComparison: summarizeBrandComparison(analysisState.brandComparison),
       };
 
       const response = await axios.post('/api/integrated-report', requestData);
@@ -1848,6 +2881,22 @@ export default function IntegratedAnalysisPage() {
     // 광고 입력 UI로 돌아감 (사용자가 다시 입력 후 분석)
   };
 
+  const handleReanalyzeStep4Shopping = () => {
+    updateState({ shoppingAnalysis: null, shoppingText: '' });
+    // 쇼핑 입력 UI로 돌아감
+  };
+
+  // 브랜드 비교 재분석 핸들러
+  const handleReanalyzeStep2Brand = () => {
+    resetFromStep(2);
+    handleBrandKeywordExpansion();
+  };
+
+  const handleReanalyzeStep3Brand = () => {
+    resetFromStep(3);
+    handleBrandContentAnalysis();
+  };
+
   const handleRegenerateReport = () => {
     updateState({ integratedReport: null });
     handleGenerateReport();
@@ -1890,6 +2939,8 @@ export default function IntegratedAnalysisPage() {
     analysisState.keywordExpansionGPTLoading ? 'AI가 키워드 데이터를 분석 중입니다...' :
     isAnyContentLoading ? '채널별 콘텐츠를 분석 중입니다...' :
     analysisState.adAnalysisLoading ? '광고를 분석 중입니다...' :
+    analysisState.shoppingAnalysisLoading ? '쇼핑 검색 결과를 분석 중입니다...' :
+    analysisState.brandComparisonLoading ? '브랜드 비교 분석 중입니다...' :
     analysisState.reportLoading ? '종합 리포트를 생성 중입니다...' :
     pptLoading ? 'PPT를 생성 중입니다...' : '';
 
@@ -1923,6 +2974,7 @@ export default function IntegratedAnalysisPage() {
           <StepIndicator
             currentStep={currentStep}
             completedSteps={completedSteps}
+            keywordType={analysisState.keywordType}
             onStepClick={handleStepClick}
           />
 
@@ -1952,14 +3004,18 @@ export default function IntegratedAnalysisPage() {
             {currentStep === 1 && (
               <Step1KeywordInput
                 keyword={analysisState.keyword}
+                keywordType={analysisState.keywordType}
                 companyName={analysisState.companyName}
+                competitorBrands={analysisState.competitorBrands}
                 onKeywordChange={handleKeywordChange}
+                onKeywordTypeChange={handleKeywordTypeChange}
                 onCompanyNameChange={(v) => updateState({ companyName: v })}
+                onCompetitorBrandsChange={(brands) => updateState({ competitorBrands: brands })}
                 onNext={() => goToStep(2)}
               />
             )}
 
-            {currentStep === 2 && (
+            {currentStep === 2 && analysisState.keywordType !== 'brand' && (
               <Step2KeywordExpansion
                 keyword={analysisState.keyword}
                 keywordExpansion={analysisState.keywordExpansion}
@@ -1973,7 +3029,20 @@ export default function IntegratedAnalysisPage() {
               />
             )}
 
-            {currentStep === 3 && (
+            {currentStep === 2 && analysisState.keywordType === 'brand' && (
+              <Step2BrandComparison
+                ownBrand={analysisState.keyword}
+                competitorBrands={analysisState.competitorBrands}
+                brandComparison={analysisState.brandComparison}
+                loading={analysisState.brandComparisonLoading}
+                onAnalyze={handleBrandKeywordExpansion}
+                onReanalyze={handleReanalyzeStep2Brand}
+                onPrev={() => goToStep(1)}
+                onNext={() => goToStep(3)}
+              />
+            )}
+
+            {currentStep === 3 && analysisState.keywordType !== 'brand' && (
               <Step3ContentAnalysis
                 keyword={analysisState.keyword}
                 selectedChannels={analysisState.selectedChannels}
@@ -1987,10 +3056,36 @@ export default function IntegratedAnalysisPage() {
               />
             )}
 
-            {currentStep === 4 && (
+            {currentStep === 3 && analysisState.keywordType === 'brand' && (
+              <Step3BrandComparison
+                brandComparison={analysisState.brandComparison}
+                selectedChannels={analysisState.selectedChannels}
+                loading={analysisState.brandComparisonLoading}
+                onChannelToggle={handleChannelToggle}
+                onAnalyze={handleBrandContentAnalysis}
+                onReanalyze={handleReanalyzeStep3Brand}
+                onPrev={() => goToStep(2)}
+                onNext={() => goToStep(4)}
+              />
+            )}
+
+            {currentStep === 4 && analysisState.keywordType === 'shopping' && (
+              <Step4ShoppingAnalysis
+                keyword={analysisState.keyword}
+                shoppingAnalysis={analysisState.shoppingAnalysis}
+                loading={analysisState.shoppingAnalysisLoading}
+                shoppingText={analysisState.shoppingText}
+                onShoppingTextChange={(text) => updateState({ shoppingText: text })}
+                onAnalyze={handleShoppingAnalysis}
+                onReanalyze={handleReanalyzeStep4Shopping}
+                onPrev={() => goToStep(3)}
+              />
+            )}
+
+            {currentStep === 4 && analysisState.keywordType !== 'shopping' && (
               <Step4AdAnalysis
                 keyword={analysisState.keyword}
-                companyName={analysisState.companyName}
+                companyName={analysisState.keywordType === 'brand' ? analysisState.keyword : analysisState.companyName}
                 adAnalysis={analysisState.adAnalysis}
                 loading={analysisState.adAnalysisLoading}
                 adInputMode={analysisState.adInputMode}
@@ -2011,7 +3106,11 @@ export default function IntegratedAnalysisPage() {
             )}
 
             {/* 종합 리포트 생성 버튼 */}
-            {(completedSteps.includes(3) || (currentStep === 4 && (analysisState.adAnalysis || analysisState.skipAdAnalysis))) && (
+            {(completedSteps.includes(3) || (currentStep === 4 && (
+              analysisState.adAnalysis ||
+              analysisState.skipAdAnalysis ||
+              analysisState.shoppingAnalysis
+            ))) && (
               <div className="mt-8 pt-6 border-t border-gray-200 text-center">
                 <button
                   onClick={handleGenerateReport}

@@ -1,5 +1,8 @@
 // 키워드 통합 분석 타입 정의
 
+// ===== 키워드 유형 =====
+export type KeywordType = 'general' | 'shopping' | 'brand';
+
 // ===== 기존 페이지에서 가져온 타입 =====
 
 // 키워드 분석 관련 타입
@@ -76,6 +79,39 @@ export interface AdAnalysisResult {
     description: string;
     improvementPoints: string;
   }>;
+}
+
+// 쇼핑 검색 분석 결과 (텍스트 붙여넣기 기반)
+export interface ShoppingSearchAnalysisResult {
+  keyword: string;
+  timestamp: string;
+  inputText: string;
+  gptAnalysis: {
+    priceAnalysis: string;
+    topBrands: string;
+    productFeatures: string;
+    purchaseFactors: string;
+    marketPositioning: string;
+    recommendations: string[];
+  };
+}
+
+// 브랜드 비교 데이터
+export interface BrandComparisonData {
+  brandKeyword: string;
+  isOwnBrand: boolean;
+  keywordExpansion: KeywordExpansionResult | null;
+  contentAnalysis: {
+    blog: KeywordAnalysisResult | null;
+    cafe: KeywordAnalysisResult | null;
+    youtube: KeywordAnalysisResult | null;
+    news: KeywordAnalysisResult | null;
+  };
+}
+
+export interface BrandComparisonResult {
+  ownBrand: BrandComparisonData;
+  competitors: BrandComparisonData[];
 }
 
 // ===== 통합 분석 전용 타입 =====
@@ -247,7 +283,9 @@ export interface IntegratedReportData {
 export interface IntegratedAnalysisState {
   // Step 1: 키워드 입력
   keyword: string;
+  keywordType: KeywordType;
   companyName: string;
+  competitorBrands: string[];
 
   // Step 2: 키워드 확장
   keywordExpansion: KeywordExpansionResult | null;
@@ -277,6 +315,15 @@ export interface IntegratedAnalysisState {
   adInputMode: 'image' | 'text';
   adText: string;
 
+  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용)
+  shoppingAnalysis: ShoppingSearchAnalysisResult | null;
+  shoppingAnalysisLoading: boolean;
+  shoppingText: string;
+
+  // 브랜드 비교 (브랜드 유형용)
+  brandComparison: BrandComparisonResult | null;
+  brandComparisonLoading: boolean;
+
   // 종합 리포트
   integratedReport: IntegratedReportData | null;
   reportLoading: boolean;
@@ -285,6 +332,7 @@ export interface IntegratedAnalysisState {
 // API 요청 타입
 export interface IntegratedReportRequest {
   keyword: string;
+  keywordType: KeywordType;
   companyName?: string;
   keywordExpansion: KeywordExpansionResult;
   keywordExpansionGPTAnalysis?: KeywordExpansionGPTAnalysis;
@@ -295,12 +343,16 @@ export interface IntegratedReportRequest {
     news?: KeywordAnalysisResult;
   };
   adAnalysis?: AdAnalysisResult;
+  shoppingAnalysis?: ShoppingSearchAnalysisResult;
+  brandComparison?: BrandComparisonResult;
 }
 
 // 초기 상태
 export const initialAnalysisState: IntegratedAnalysisState = {
   keyword: '',
+  keywordType: 'general',
   companyName: '',
+  competitorBrands: [],
   keywordExpansion: null,
   keywordExpansionLoading: false,
   keywordExpansionGPTAnalysis: null,
@@ -323,6 +375,11 @@ export const initialAnalysisState: IntegratedAnalysisState = {
   skipAdAnalysis: false,
   adInputMode: 'text',
   adText: '',
+  shoppingAnalysis: null,
+  shoppingAnalysisLoading: false,
+  shoppingText: '',
+  brandComparison: null,
+  brandComparisonLoading: false,
   integratedReport: null,
   reportLoading: false,
 };
@@ -335,11 +392,22 @@ export const channelNames: Record<ContentType, string> = {
   news: '뉴스',
 };
 
-// 단계 정보
-export const stepInfo: Array<{ step: WizardStep; title: string; description: string }> = [
-  { step: 1, title: '키워드 입력', description: '분석할 키워드와 업체명을 입력하세요' },
-  { step: 2, title: '키워드 확장', description: '연관 키워드와 검색량을 분석합니다' },
-  { step: 3, title: '콘텐츠 분석', description: '채널별 콘텐츠와 감성을 분석합니다' },
-  { step: 4, title: '광고 분석', description: '경쟁 광고를 분석합니다 (선택)' },
-  { step: 5, title: '종합 리포트', description: '분석 결과를 종합한 마케팅 리포트입니다' },
-];
+// 단계 정보 (키워드 유형에 따라 동적으로 생성)
+export const getStepInfo = (keywordType: KeywordType): Array<{ step: WizardStep; title: string; description: string }> => {
+  const step4Info = {
+    general: { title: '광고 분석', description: '경쟁 광고를 분석합니다 (선택)' },
+    shopping: { title: '쇼핑 검색 분석', description: '쇼핑 검색 결과를 분석합니다' },
+    brand: { title: '광고 분석', description: '자사 브랜드 광고를 분석합니다 (선택)' },
+  };
+
+  return [
+    { step: 1, title: '키워드 입력', description: '분석할 키워드와 업체명을 입력하세요' },
+    { step: 2, title: keywordType === 'brand' ? '브랜드별 키워드 확장' : '키워드 확장', description: keywordType === 'brand' ? '자사/경쟁사 브랜드별 연관 키워드를 분석합니다' : '연관 키워드와 검색량을 분석합니다' },
+    { step: 3, title: keywordType === 'brand' ? '브랜드별 콘텐츠 분석' : '콘텐츠 분석', description: keywordType === 'brand' ? '브랜드별 채널 콘텐츠를 비교 분석합니다' : '채널별 콘텐츠와 감성을 분석합니다' },
+    { step: 4, title: step4Info[keywordType].title, description: step4Info[keywordType].description },
+    { step: 5, title: '종합 리포트', description: '분석 결과를 종합한 마케팅 리포트입니다' },
+  ];
+};
+
+// 기본 단계 정보 (하위 호환성용)
+export const stepInfo = getStepInfo('general');

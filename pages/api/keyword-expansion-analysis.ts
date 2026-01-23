@@ -4,6 +4,7 @@ import {
   KeywordExpansionResult,
   KeywordExpansionData,
   KeywordExpansionGPTAnalysis,
+  KeywordType,
 } from '../../types/integrated-analysis';
 
 const openai = new OpenAI({
@@ -19,13 +20,17 @@ export default async function handler(
   }
 
   try {
-    const { keyword, keywordExpansion }: { keyword: string; keywordExpansion: KeywordExpansionResult } = req.body;
+    const { keyword, keywordExpansion, keywordType = 'general' }: {
+      keyword: string;
+      keywordExpansion: KeywordExpansionResult;
+      keywordType?: KeywordType;
+    } = req.body;
 
     if (!keyword || !keywordExpansion?.keywordList?.length) {
       return res.status(400).json({ error: '키워드 확장 데이터가 누락되었습니다.' });
     }
 
-    const analysis = await generateKeywordExpansionAnalysis(keyword, keywordExpansion);
+    const analysis = await generateKeywordExpansionAnalysis(keyword, keywordExpansion, keywordType);
     res.status(200).json({ analysis });
   } catch (error) {
     console.error('키워드 확장 분석 오류:', error);
@@ -74,26 +79,95 @@ function buildSimpleSummary(keyword: string, keywordList: KeywordExpansionData[]
 ${top20}`;
 }
 
-async function generateKeywordExpansionAnalysis(
-  keyword: string,
-  keywordExpansion: KeywordExpansionResult
-): Promise<KeywordExpansionGPTAnalysis> {
-  const summary = buildSimpleSummary(keyword, keywordExpansion.keywordList);
-
-  const systemPrompt = `당신은 마케팅 데이터 분석가입니다. 키워드 데이터를 분석하여 간결한 인사이트를 제공합니다.
+// 키워드 유형별 분석 프롬프트 생성
+function getKeywordExpansionPrompts(keywordType: KeywordType): { systemPrompt: string; analysisContext: string } {
+  const baseSystem = `당신은 마케팅 데이터 분석가입니다. 키워드 데이터를 분석하여 간결한 인사이트를 제공합니다.
 반드시 JSON 형식으로 응답하세요. 각 항목은 2-3문장으로 핵심만 작성하세요.`;
 
-  const userPrompt = `${summary}
+  const typePrompts: Record<KeywordType, { context: string }> = {
+    general: {
+      context: `검색광고 캠페인 최적화 관점에서 키워드 데이터를 분석해주세요.
+중점 분석 사항:
+- 검색 의도(Search Intent) 분류: 정보성/비교성/구매성
+- 전환 가능성 높은 키워드 식별
+- 광고 입찰 전략 방향 (고경쟁 vs 틈새 키워드)
+- 시즌성/트렌드 패턴`
+    },
+    shopping: {
+      context: `이커머스 상품 판매 최적화 관점에서 키워드 데이터를 분석해주세요.
+중점 분석 사항:
+- 구매 의도 키워드 vs 정보 탐색 키워드 분류
+- 가격대별 검색 패턴 (저가/중가/고가)
+- 브랜드명 포함 키워드 vs 일반 키워드 비율
+- 상품 속성 키워드 (색상, 사이즈, 기능 등)`
+    },
+    brand: {
+      context: `브랜드 경쟁력 분석 관점에서 키워드 데이터를 분석해주세요.
+중점 분석 사항:
+- 브랜드 인지도 지표 (순수 브랜드 검색량)
+- 경쟁 브랜드 대비 검색량 점유율(SOV)
+- 브랜드 연관 키워드 성격 (긍정/부정/기능)
+- 브랜드 전환 가능성 (타 브랜드 → 자사)`
+    }
+  };
 
-위 데이터를 분석하여 다음 5개 항목을 각각 2-3문장으로 작성해주세요:
+  return {
+    systemPrompt: baseSystem + '\n\n' + typePrompts[keywordType].context,
+    analysisContext: typePrompts[keywordType].context
+  };
+}
 
-{
+// 키워드 유형별 응답 구조 가이드 생성
+function getResponseGuide(keywordType: KeywordType): string {
+  const guides: Record<KeywordType, string> = {
+    general: `{
   "searchVolumeAnalysis": "검색량 분석 (수요 규모, 모바일/PC 비중 의미)",
-  "engagementAnalysis": "클릭율 분석 (CTR 패턴, 구매의도 높은/낮은 키워드)",
-  "competitionAnalysis": "경쟁강도 분석 (시장 경쟁 상황, 진입 전략)",
-  "consumerTrendAnalysis": "소비자 트렌드 (검색 의도, 행동 패턴)",
-  "conclusion": "결론 및 마케팅 시사점 (핵심 권고사항)"
-}`;
+  "engagementAnalysis": "검색 의도 분류 (정보:__%, 비교:__%, 구매:__%) 및 전환 가능성 높은 키워드 TOP 5",
+  "competitionAnalysis": "경쟁강도 분석 (고경쟁 vs 틈새 키워드 입찰 전략)",
+  "consumerTrendAnalysis": "소비자 행동 패턴 및 시즌성/트렌드 분석",
+  "conclusion": "검색광고 ROI 극대화를 위한 핵심 권고사항"
+}`,
+    shopping: `{
+  "searchVolumeAnalysis": "검색량 분석 (구매 의도 vs 정보 탐색 비율)",
+  "engagementAnalysis": "가격대별 검색 패턴 분석 (저가/중가/고가 선호도)",
+  "competitionAnalysis": "브랜드 키워드 vs 일반 키워드 경쟁 분석",
+  "consumerTrendAnalysis": "상품 속성 키워드 패턴 (색상, 사이즈, 기능 등)",
+  "conclusion": "네이버 쇼핑 상품 판매 최적화를 위한 핵심 권고사항"
+}`,
+    brand: `{
+  "searchVolumeAnalysis": "브랜드 인지도 지표 분석 (순수 브랜드 검색량)",
+  "engagementAnalysis": "경쟁 브랜드 대비 검색량 점유율(SOV) 분석",
+  "competitionAnalysis": "브랜드 연관 키워드 성격 분석 (긍정/부정/기능)",
+  "consumerTrendAnalysis": "브랜드 전환 가능성 분석 (타 브랜드 → 자사)",
+  "conclusion": "브랜드 경쟁력 강화를 위한 핵심 권고사항"
+}`
+  };
+
+  return guides[keywordType];
+}
+
+async function generateKeywordExpansionAnalysis(
+  keyword: string,
+  keywordExpansion: KeywordExpansionResult,
+  keywordType: KeywordType = 'general'
+): Promise<KeywordExpansionGPTAnalysis> {
+  const summary = buildSimpleSummary(keyword, keywordExpansion.keywordList);
+  const { systemPrompt } = getKeywordExpansionPrompts(keywordType);
+  const responseGuide = getResponseGuide(keywordType);
+
+  const analysisTypeLabel: Record<KeywordType, string> = {
+    general: '검색광고 최적화',
+    shopping: '쇼핑 마케팅',
+    brand: '브랜드 경쟁력'
+  };
+
+  const userPrompt = `[${analysisTypeLabel[keywordType]} 분석]
+
+${summary}
+
+위 데이터를 【${analysisTypeLabel[keywordType]}】 관점에서 분석하여 다음 5개 항목을 각각 2-3문장으로 작성해주세요:
+
+${responseGuide}`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4.1',
