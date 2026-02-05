@@ -1,0 +1,168 @@
+Estimate
+Methods
+get (average position bid)
+POST /estimate/average-position-bid/type
+estimate bid by average position statistics.
+get (median bid)
+POST /estimate/median-bid/type
+estimate bid by median
+get (exposure minimum bid)
+POST /estimate/exposure-minimum-bid/type
+estimate the minimum bid is always exposure.
+get (performance)
+POST /estimate/performance/type
+estimate performance data by expect bid.
+get (performance-bulk)
+POST /estimate/performance-bulk
+estimate performance data by keyword and bid.
+get (average position bid) - NPLA
+POST /npla-estimate/average-position-bid/type
+estimate bid by average position statistics.
+get (exposure minimum bid) - NPLA
+POST /npla-estimate/exposure-minimum-bid/type
+estimate the minimum bid is always exposure.
+get (average position bid) - NPC
+POST /npc-estimate/average-position-bid/type
+estimate bid by average position statistics.
+get (exposure minimum bid) - NPC
+POST /npc-estimate/exposure-minimum-bid/type
+estimate the minimum bid is always exposure.
+get (performance) - NPC
+POST /npc-estimate/performance
+estimate performance data by keyword.
+
+###
+
+Estimate: get (average position bid)
+estimate bid by average position statistics.
+Request
+HTTP request
+POST /estimate/average-position-bid/{type}
+Parameters
+Parameter name	Data type	Description
+Path parameters
+type	string	the type of keys. id means keys are AdKeyowrd.nccKeywordId.
+keyword means keys are AdKeyword.Keyword
+
+
+type의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the type.Valid items are:
+•	id
+•	keyword
+Request body
+device	string	User Device
+
+
+device의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the device.Valid items are:
+•	PC
+•	MOBILE
+items[]	KeyAndPosition
+The maximum of 200 keys can be requested at once.
+Response
+요청이 성공적으로 수행이되면, Response Body에 아래 구조의 데이터가 반환됩니다. If the request is successful, the Response Body will return data with the structure below.:
+Property name	Data type	Description
+device	string	User Device
+
+
+device의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the device.Valid items are:
+•	PC
+•	MOBILE
+estimate[]	EstimateBidByPosition
+array of estimated value
+
+
+###
+Estimate: get (average position bid) - NPLA
+estimate bid by average position statistics.
+Request
+HTTP request
+POST /npla-estimate/average-position-bid/{type}
+Parameters
+Parameter name	Data type	Description
+Path parameters
+type	string	the type of keys. id means keys are Ad.nccAdId.
+product means keys are Ad.productId
+
+
+type의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the type.Valid items are:
+•	id
+•	product
+Request body
+device	string	User Device
+
+
+device의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the device.Valid items are:
+•	PC
+•	MOBILE
+items[]	KeyAndPosition
+The maximum of 200 keys can be requested at once.
+Response
+요청이 성공적으로 수행이되면, Response Body에 아래 구조의 데이터가 반환됩니다. If the request is successful, the Response Body will return data with the structure below.:
+Property name	Data type	Description
+product	string	NAVER shopping product ID
+position	integer	expected position for ad
+nccAdId	string	Ad.nccAdId
+bid	integer	maximum cost per click for a ad (unit: 10 KRW). valid range:
+70~100,000
+
+
+EstimateBidByPosition
+이 데이터를 참조하고 있는 항목
+
+EstimateBidWithPostion
+Columns
+Property name	Data type	Description
+keyword	string	
+search ad keyword
+
+position	integer	
+expected position for ad
+
+nccKeywordId	string	
+AdKeyword.nccKeywordId
+
+bid	integer	
+maximum cost per click for a ad (unit: 10 KRW). valid range:
+
+70~100,000
+
+
+###
+Estimate: get (average position bid) - NPC
+estimate bid by average position statistics.
+Request
+HTTP request
+POST /npc-estimate/average-position-bid/{type}
+Parameters
+Parameter name	Data type	Description
+Path parameters
+type	string	the type of keys. id means keys are AdKeyowrd.nccKeywordId. keyword means keys are AdKeyword.Keyword
+
+
+type의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the type.Valid items are:
+•	id
+•	keyword
+Request body
+device	string	User Device
+
+
+device의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the device.Valid items are:
+•	PC
+•	MOBILE
+items[]	NpcKeyAndPosition
+The maximum of 200 keys can be requested at once.
+Response
+요청이 성공적으로 수행이되면, Response Body에 아래 구조의 데이터가 반환됩니다. If the request is successful, the Response Body will return data with the structure below.:
+Property name	Data type	Description
+device	string	device의 종류입니다. 유효한 값 목록은 다음과 같습니다.
+The type of the device.Valid items are:
+•	PC
+•	MOBILE
+estimate[]	NpcExpect
+

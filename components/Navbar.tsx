@@ -58,6 +58,9 @@ const Navbar = () => {
               <Link href="/ad-analysis" className={getLinkClass('/ad-analysis')}>
                 광고 분석
               </Link>
+              <Link href="/bid-comparison" className={getLinkClass('/bid-comparison')}>
+                입찰가 비교
+              </Link>
             </div>
           </div>
           
@@ -125,6 +128,9 @@ const Navbar = () => {
           </Link>
           <Link href="/ad-analysis" className={`block ${getLinkClass('/ad-analysis')}`}>
             광고 분석
+          </Link>
+          <Link href="/bid-comparison" className={`block ${getLinkClass('/bid-comparison')}`}>
+            입찰가 비교
           </Link>
         </div>
       </div>
