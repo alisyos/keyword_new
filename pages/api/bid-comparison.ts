@@ -48,14 +48,20 @@ export default async function handler(
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { keyword1, keyword2, adType } = req.body as {
-    keyword1: string;
-    keyword2: string;
+  const { keywords, adType } = req.body as {
+    keywords: string[];
     adType: AdType;
   };
 
-  if (!keyword1?.trim() || !keyword2?.trim()) {
-    return res.status(400).json({ error: '두 개의 키워드를 모두 입력해주세요.' });
+  // 키워드 배열 검증 (2~5개)
+  if (!Array.isArray(keywords) || keywords.length < 2 || keywords.length > 5) {
+    return res.status(400).json({ error: '키워드는 2개 이상 5개 이하로 입력해주세요.' });
+  }
+
+  // 빈 키워드 검증
+  const trimmedKeywords = keywords.map(k => k?.trim()).filter(k => k);
+  if (trimmedKeywords.length < 2) {
+    return res.status(400).json({ error: '최소 2개의 키워드를 입력해주세요.' });
   }
 
   if (!AD_TYPE_URI[adType]) {
@@ -73,13 +79,14 @@ export default async function handler(
   const uri = AD_TYPE_URI[adType];
 
   try {
-    // PC, MOBILE 각각의 요청 items 생성
+    // PC, MOBILE 각각의 요청 items 생성 (모든 키워드에 대해)
     const buildItems = (device: string): EstimateItem[] => {
       const maxPos = POSITION_RANGE[device];
       const items: EstimateItem[] = [];
       for (let pos = 1; pos <= maxPos; pos++) {
-        items.push({ key: keyword1.trim(), position: pos });
-        items.push({ key: keyword2.trim(), position: pos });
+        for (const keyword of trimmedKeywords) {
+          items.push({ key: keyword, position: pos });
+        }
       }
       return items;
     };
@@ -147,9 +154,13 @@ export default async function handler(
       return { keyword, pc, mobile };
     };
 
+    // 모든 키워드에 대해 결과 파싱
+    const keywordResults = trimmedKeywords.map(keyword =>
+      parseResult(keyword, pcData, mobileData)
+    );
+
     const result: BidComparisonResult = {
-      keyword1: parseResult(keyword1.trim(), pcData, mobileData),
-      keyword2: parseResult(keyword2.trim(), pcData, mobileData),
+      keywords: keywordResults,
       adType,
       timestamp: new Date().toISOString(),
     };

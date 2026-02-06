@@ -23,35 +23,59 @@ const AD_TYPE_OPTIONS: { value: AdType; label: string }[] = [
   { value: 'powercontent', label: '파워콘텐츠' },
 ];
 
+// 키워드별 색상 배열 (최대 5개)
+const KEYWORD_COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
+
 function buildComparisonRows(
   result: BidComparisonResult,
   device: 'pc' | 'mobile'
 ): BidComparisonRow[] {
-  const bids1 = result.keyword1[device];
-  const bids2 = result.keyword2[device];
-  const maxLen = Math.max(bids1.length, bids2.length);
+  const { keywords } = result;
+  if (keywords.length === 0) return [];
+
+  // 각 키워드의 해당 디바이스 입찰가 배열
+  const allBids = keywords.map(k => k[device]);
+  const maxLen = Math.max(...allBids.map(b => b.length));
   const rows: BidComparisonRow[] = [];
 
   for (let i = 0; i < maxLen; i++) {
-    const b1 = bids1[i]?.bid ?? 0;
-    const b2 = bids2[i]?.bid ?? 0;
-    const diff = b2 - b1;
-    const base = Math.max(b1, b2);
-    const percentDiff = base > 0 ? Math.round((Math.abs(diff) / base) * 1000) / 10 : 0;
-    const higherKeyword =
-      diff > 0
-        ? result.keyword2.keyword
-        : diff < 0
-        ? result.keyword1.keyword
-        : '-';
+    const bids: number[] = [];
+    let maxBid = 0;
+    let minBid = Infinity;
+    let maxKeyword = '';
+    let minKeyword = '';
+
+    keywords.forEach((kwResult, idx) => {
+      const bid = allBids[idx][i]?.bid ?? 0;
+      bids.push(bid);
+      if (bid > maxBid) {
+        maxBid = bid;
+        maxKeyword = kwResult.keyword;
+      }
+      if (bid < minBid && bid > 0) {
+        minBid = bid;
+        minKeyword = kwResult.keyword;
+      }
+    });
+
+    // 모든 입찰가가 0인 경우
+    if (minBid === Infinity) {
+      minBid = 0;
+      minKeyword = keywords[0].keyword;
+    }
+
+    const difference = maxBid - minBid;
+    const percentDiff = maxBid > 0 ? Math.round((difference / maxBid) * 1000) / 10 : 0;
 
     rows.push({
-      position: (bids1[i]?.position ?? bids2[i]?.position ?? i + 1),
-      bid1: b1,
-      bid2: b2,
-      difference: diff,
+      position: allBids[0][i]?.position ?? i + 1,
+      bids,
+      maxBid,
+      minBid,
+      maxKeyword,
+      minKeyword,
+      difference,
       percentDiff,
-      higherKeyword,
     });
   }
 
@@ -62,25 +86,28 @@ function buildChartData(
   result: BidComparisonResult,
   device: 'pc' | 'mobile'
 ) {
-  const bids1 = result.keyword1[device];
-  const bids2 = result.keyword2[device];
-  const maxLen = Math.max(bids1.length, bids2.length);
+  const { keywords } = result;
+  if (keywords.length === 0) return [];
+
+  const allBids = keywords.map(k => k[device]);
+  const maxLen = Math.max(...allBids.map(b => b.length));
   const data = [];
 
   for (let i = 0; i < maxLen; i++) {
-    data.push({
-      position: `${(bids1[i]?.position ?? bids2[i]?.position ?? i + 1)}위`,
-      [result.keyword1.keyword]: bids1[i]?.bid ?? 0,
-      [result.keyword2.keyword]: bids2[i]?.bid ?? 0,
+    const item: Record<string, string | number> = {
+      position: `${allBids[0][i]?.position ?? i + 1}위`,
+    };
+    keywords.forEach((kwResult, idx) => {
+      item[kwResult.keyword] = allBids[idx][i]?.bid ?? 0;
     });
+    data.push(item);
   }
 
   return data;
 }
 
 export default function BidComparison() {
-  const [keyword1, setKeyword1] = useState('');
-  const [keyword2, setKeyword2] = useState('');
+  const [keywords, setKeywords] = useState<string[]>(['', '']);
   const [adType, setAdType] = useState<AdType>('powerlink');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -89,11 +116,31 @@ export default function BidComparison() {
   const [analysis, setAnalysis] = useState<BidComparisonAnalysis | null>(null);
   const [activeTab, setActiveTab] = useState<'pc' | 'mobile'>('pc');
 
+  const handleKeywordChange = (index: number, value: string) => {
+    const newKeywords = [...keywords];
+    newKeywords[index] = value;
+    setKeywords(newKeywords);
+  };
+
+  const addKeyword = () => {
+    if (keywords.length < 5) {
+      setKeywords([...keywords, '']);
+    }
+  };
+
+  const removeKeyword = (index: number) => {
+    if (keywords.length > 2) {
+      const newKeywords = keywords.filter((_, i) => i !== index);
+      setKeywords(newKeywords);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!keyword1.trim() || !keyword2.trim()) {
-      setError('두 개의 키워드를 모두 입력해주세요.');
+    const filledKeywords = keywords.filter(k => k.trim());
+    if (filledKeywords.length < 2) {
+      setError('최소 2개의 키워드를 입력해주세요.');
       return;
     }
 
@@ -104,8 +151,7 @@ export default function BidComparison() {
 
     try {
       const response = await axios.post<BidComparisonResult>('/api/bid-comparison', {
-        keyword1: keyword1.trim(),
-        keyword2: keyword2.trim(),
+        keywords: filledKeywords,
         adType,
       });
 
@@ -141,7 +187,7 @@ export default function BidComparison() {
     <>
       <Head>
         <title>키워드 입찰가 비교 - GPTKOREA</title>
-        <meta name="description" content="두 키워드의 순위별 입찰가를 비교 분석합니다." />
+        <meta name="description" content="최대 5개 키워드의 순위별 입찰가를 비교 분석합니다." />
       </Head>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 pt-20 pb-12 px-4">
@@ -152,37 +198,68 @@ export default function BidComparison() {
               키워드 입찰가 비교
             </h1>
             <p className="text-gray-500">
-              두 키워드의 순위별 입찰가를 비교하여 효율적인 광고 전략을 수립하세요.
+              최대 5개 키워드의 순위별 입찰가를 비교하여 효율적인 광고 전략을 수립하세요.
             </p>
           </div>
 
           {/* 입력 폼 */}
           <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  키워드 1
-                </label>
-                <input
-                  type="text"
-                  value={keyword1}
-                  onChange={(e) => setKeyword1(e.target.value)}
-                  placeholder="예: LG정수기"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                />
+            {/* 키워드 입력 필드들 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                비교 키워드 (최소 2개, 최대 5개)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {keywords.map((keyword, index) => (
+                  <div key={index} className="relative flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                        style={{ backgroundColor: KEYWORD_COLORS[index] }}
+                      />
+                      <input
+                        type="text"
+                        value={keyword}
+                        onChange={(e) => handleKeywordChange(index, e.target.value)}
+                        placeholder={`키워드 ${index + 1}`}
+                        className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                      />
+                    </div>
+                    {/* 제거 버튼 (최소 2개일 때 비활성화) */}
+                    <button
+                      type="button"
+                      onClick={() => removeKeyword(index)}
+                      disabled={keywords.length <= 2}
+                      className={`p-2 rounded-lg transition-all ${
+                        keywords.length <= 2
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                      }`}
+                      title={keywords.length <= 2 ? '최소 2개 키워드 필요' : '키워드 제거'}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  키워드 2
-                </label>
-                <input
-                  type="text"
-                  value={keyword2}
-                  onChange={(e) => setKeyword2(e.target.value)}
-                  placeholder="예: SK매직정수기"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                />
-              </div>
+              {/* 키워드 추가 버튼 */}
+              <button
+                type="button"
+                onClick={addKeyword}
+                disabled={keywords.length >= 5}
+                className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  keywords.length >= 5
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                키워드 추가 {keywords.length >= 5 && '(최대 5개)'}
+              </button>
             </div>
 
             {/* 광고 유형 선택 */}
@@ -287,10 +364,10 @@ export default function BidComparison() {
                 </button>
               </div>
 
-              {/* 비교 표 + 그래프 좌우 배치 */}
-              <div className="flex flex-col lg:flex-row gap-6 mb-8">
+              {/* 비교 표 + 그래프 수직 배치 */}
+              <div className="flex flex-col gap-6 mb-8">
                 {/* 비교 표 */}
-                <div className="w-full lg:w-[45%] bg-white rounded-2xl shadow-lg overflow-hidden">
+                <div className="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100">
                     <h2 className="text-lg font-bold text-gray-800">
                       순위별 입찰가 비교 ({activeTab === 'pc' ? 'PC' : '모바일'})
@@ -300,20 +377,20 @@ export default function BidComparison() {
                     <table className="w-full">
                       <thead>
                         <tr className="bg-gray-50">
-                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600">
+                          <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">
                             순위
                           </th>
-                          <th className="px-4 py-2 text-center text-xs font-semibold text-blue-600">
-                            {result.keyword1.keyword}
-                          </th>
-                          <th className="px-4 py-2 text-center text-xs font-semibold text-red-600">
-                            {result.keyword2.keyword}
-                          </th>
-                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600">
-                            차액
-                          </th>
-                          <th className="px-4 py-2 text-center text-xs font-semibold text-gray-600">
-                            비교
+                          {result.keywords.map((kwResult, idx) => (
+                            <th
+                              key={kwResult.keyword}
+                              className="px-3 py-2 text-center text-xs font-semibold whitespace-nowrap"
+                              style={{ color: KEYWORD_COLORS[idx] }}
+                            >
+                              {kwResult.keyword}
+                            </th>
+                          ))}
+                          <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 whitespace-nowrap">
+                            최고↔최저
                           </th>
                         </tr>
                       </thead>
@@ -323,31 +400,31 @@ export default function BidComparison() {
                             key={row.position}
                             className="border-t border-gray-50 hover:bg-gray-50 transition"
                           >
-                            <td className="px-4 py-2 text-center font-medium text-gray-700">
+                            <td className="px-3 py-2 text-center font-medium text-gray-700 whitespace-nowrap">
                               {row.position}위
                             </td>
-                            <td className="px-4 py-2 text-center text-blue-700 font-medium">
-                              {row.bid1.toLocaleString()}원
-                            </td>
-                            <td className="px-4 py-2 text-center text-red-700 font-medium">
-                              {row.bid2.toLocaleString()}원
-                            </td>
-                            <td
-                              className={`px-4 py-2 text-center font-medium ${
-                                row.difference > 0
-                                  ? 'text-red-500'
-                                  : row.difference < 0
-                                  ? 'text-blue-500'
-                                  : 'text-gray-400'
-                              }`}
-                            >
-                              {row.difference > 0 ? '+' : ''}
-                              {row.difference.toLocaleString()}원
-                            </td>
-                            <td className="px-4 py-2 text-center text-xs text-gray-600">
-                              {row.difference === 0
-                                ? '동일'
-                                : `${row.higherKeyword} ${row.percentDiff}% 높음`}
+                            {row.bids.map((bid, idx) => (
+                              <td
+                                key={idx}
+                                className="px-3 py-2 text-center font-medium whitespace-nowrap"
+                                style={{ color: KEYWORD_COLORS[idx] }}
+                              >
+                                {bid.toLocaleString()}원
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-center text-xs text-gray-600 whitespace-nowrap">
+                              {row.difference === 0 ? (
+                                <span className="text-gray-400">동일</span>
+                              ) : (
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-gray-800">
+                                    {row.difference.toLocaleString()}원
+                                  </span>
+                                  <span className="text-gray-500 text-[10px]">
+                                    {row.maxKeyword} vs {row.minKeyword} ({row.percentDiff}%)
+                                  </span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -357,44 +434,59 @@ export default function BidComparison() {
                 </div>
 
                 {/* 그래프 */}
-                <div className="w-full lg:w-[55%] bg-white rounded-2xl shadow-lg p-6 flex flex-col">
+                <div className="w-full bg-white rounded-2xl shadow-lg p-6">
                   <h2 className="text-lg font-bold text-gray-800 mb-4">
                     입찰가 추이 그래프 ({activeTab === 'pc' ? 'PC' : '모바일'})
                   </h2>
-                  <div className="flex-1 min-h-[350px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="position" tick={{ fontSize: 12 }} />
-                        <YAxis
-                          tickFormatter={(v: number) => v.toLocaleString()}
-                          tick={{ fontSize: 11 }}
-                          width={80}
-                        />
-                        <Tooltip
-                          formatter={(value: number) => [`${value.toLocaleString()}원`]}
-                          labelFormatter={(label: string) => `${label}`}
-                          contentStyle={{ fontSize: 12 }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line
-                          type="monotone"
-                          dataKey={result.keyword1.keyword}
-                          stroke="#3B82F6"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey={result.keyword2.keyword}
-                          stroke="#EF4444"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="flex gap-6">
+                    {/* 차트 영역 */}
+                    <div className="flex-1 h-[400px]">
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <XAxis dataKey="position" tick={{ fontSize: 12 }} />
+                          <YAxis
+                            tickFormatter={(v: number) => v.toLocaleString()}
+                            tick={{ fontSize: 11 }}
+                            width={80}
+                          />
+                          <Tooltip
+                            formatter={(value: number) => [`${value.toLocaleString()}원`]}
+                            labelFormatter={(label: string) => `${label}`}
+                            contentStyle={{ fontSize: 12 }}
+                          />
+                          {result.keywords.map((kwResult, idx) => (
+                            <Line
+                              key={kwResult.keyword}
+                              type="monotone"
+                              dataKey={kwResult.keyword}
+                              stroke={KEYWORD_COLORS[idx]}
+                              strokeWidth={2}
+                              dot={{ r: 4 }}
+                              activeDot={{ r: 6 }}
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* 범례 영역 */}
+                    <div className="flex items-center">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div className="space-y-3">
+                          {result.keywords.map((kwResult, idx) => (
+                            <div key={kwResult.keyword} className="flex items-center gap-2">
+                              <div
+                                className="w-4 h-[2px]"
+                                style={{ backgroundColor: KEYWORD_COLORS[idx] }}
+                              />
+                              <span className="text-sm" style={{ color: KEYWORD_COLORS[idx] }}>
+                                {kwResult.keyword}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -446,47 +538,59 @@ export default function BidComparison() {
                       </div>
                     </div>
 
-                    {/* 키워드1 운영전략 */}
-                    <div>
-                      <h3 className="font-semibold text-blue-800 mb-3 text-base">
-                        {result.keyword1.keyword} 운영전략
-                      </h3>
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                          <span className="inline-block px-2 py-0.5 bg-blue-200 text-blue-800 text-xs font-semibold rounded mb-2">PC</span>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
-                            {analysis.keyword1StrategyPc}
-                          </p>
-                        </div>
-                        <div className="flex-1 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                          <span className="inline-block px-2 py-0.5 bg-blue-200 text-blue-800 text-xs font-semibold rounded mb-2">모바일</span>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
-                            {analysis.keyword1StrategyMobile}
-                          </p>
+                    {/* 키워드별 운영전략 (동적 렌더링) */}
+                    {analysis.keywordStrategies.map((strategy, idx) => (
+                      <div key={strategy.keyword}>
+                        <h3
+                          className="font-semibold mb-3 text-base"
+                          style={{ color: KEYWORD_COLORS[idx] }}
+                        >
+                          {strategy.keyword} 운영전략
+                        </h3>
+                        <div className="flex flex-col md:flex-row gap-4">
+                          <div
+                            className="flex-1 p-4 rounded-xl border"
+                            style={{
+                              backgroundColor: `${KEYWORD_COLORS[idx]}10`,
+                              borderColor: `${KEYWORD_COLORS[idx]}30`,
+                            }}
+                          >
+                            <span
+                              className="inline-block px-2 py-0.5 text-xs font-semibold rounded mb-2"
+                              style={{
+                                backgroundColor: `${KEYWORD_COLORS[idx]}30`,
+                                color: KEYWORD_COLORS[idx],
+                              }}
+                            >
+                              PC
+                            </span>
+                            <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
+                              {strategy.pc}
+                            </p>
+                          </div>
+                          <div
+                            className="flex-1 p-4 rounded-xl border"
+                            style={{
+                              backgroundColor: `${KEYWORD_COLORS[idx]}10`,
+                              borderColor: `${KEYWORD_COLORS[idx]}30`,
+                            }}
+                          >
+                            <span
+                              className="inline-block px-2 py-0.5 text-xs font-semibold rounded mb-2"
+                              style={{
+                                backgroundColor: `${KEYWORD_COLORS[idx]}30`,
+                                color: KEYWORD_COLORS[idx],
+                              }}
+                            >
+                              모바일
+                            </span>
+                            <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
+                              {strategy.mobile}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-
-                    {/* 키워드2 운영전략 */}
-                    <div>
-                      <h3 className="font-semibold text-red-800 mb-3 text-base">
-                        {result.keyword2.keyword} 운영전략
-                      </h3>
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 p-4 bg-red-50 rounded-xl border border-red-100">
-                          <span className="inline-block px-2 py-0.5 bg-red-200 text-red-800 text-xs font-semibold rounded mb-2">PC</span>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
-                            {analysis.keyword2StrategyPc}
-                          </p>
-                        </div>
-                        <div className="flex-1 p-4 bg-red-50 rounded-xl border border-red-100">
-                          <span className="inline-block px-2 py-0.5 bg-red-200 text-red-800 text-xs font-semibold rounded mb-2">모바일</span>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
-                            {analysis.keyword2StrategyMobile}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-gray-400 text-center py-8">

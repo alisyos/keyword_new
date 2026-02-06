@@ -14,30 +14,32 @@ export interface KeywordBidResult {
   mobile: BidByPosition[];
 }
 
-// 비교 행 데이터 (표 렌더링용)
+// 비교 행 데이터 (표 렌더링용) - 동적 키워드 수 지원
 export interface BidComparisonRow {
   position: number;
-  bid1: number;
-  bid2: number;
-  difference: number;       // bid2 - bid1
-  percentDiff: number;      // 차이 퍼센트
-  higherKeyword: string;    // 더 높은 키워드명
+  bids: number[];              // 키워드별 입찰가 배열
+  maxBid: number;              // 해당 순위 최고 입찰가
+  minBid: number;              // 해당 순위 최저 입찰가
+  maxKeyword: string;          // 최고 입찰가 키워드명
+  minKeyword: string;          // 최저 입찰가 키워드명
+  difference: number;          // 최고 - 최저 차액
+  percentDiff: number;         // 차이 퍼센트
 }
 
-// API 응답
+// API 응답 - 동적 키워드 배열 지원 (2~5개)
 export interface BidComparisonResult {
-  keyword1: KeywordBidResult;
-  keyword2: KeywordBidResult;
+  keywords: KeywordBidResult[];  // 2~5개 키워드
   adType: AdType;
   timestamp: string;
 }
 
-// GPT 분석 결과 (PC/모바일 분리)
+// GPT 분석 결과 (PC/모바일 분리) - 동적 키워드 수 지원
 export interface BidComparisonAnalysis {
   strategicInflectionPc: string;      // 전략적 분기점 - PC
   strategicInflectionMobile: string;  // 전략적 분기점 - 모바일
-  keyword1StrategyPc: string;         // 키워드1 운영전략 - PC
-  keyword1StrategyMobile: string;     // 키워드1 운영전략 - 모바일
-  keyword2StrategyPc: string;         // 키워드2 운영전략 - PC
-  keyword2StrategyMobile: string;     // 키워드2 운영전략 - 모바일
+  keywordStrategies: {                // 동적 키워드 전략 배열
+    keyword: string;
+    pc: string;
+    mobile: string;
+  }[];
 }
