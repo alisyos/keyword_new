@@ -37,7 +37,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Head>
         <title>키워드 분석 서비스 | GPTKOREA</title>
         <meta name="description" content="네이버 블로그, 카페, 유튜브에서 키워드 관련 컨텐츠를 검색하고 분석하세요." />
@@ -45,16 +45,14 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className="max-w-6xl mx-auto px-4 py-12">
+      <main className="max-w-6xl mx-auto px-4 pt-10 pb-12">
         {/* 헤더 섹션 */}
-        <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
             키워드 분석 서비스
           </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            네이버 블로그, 카페, 유튜브의 콘텐츠를 실시간으로 분석하여
-            <br className="hidden md:block" />
-            키워드에 대한 인사이트를 제공해드립니다.
+          <p className="text-gray-500">
+            네이버 블로그, 카페, 유튜브의 콘텐츠를 실시간으로 분석하여 키워드에 대한 인사이트를 제공해드립니다.
           </p>
         </div>
 

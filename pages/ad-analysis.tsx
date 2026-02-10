@@ -113,22 +113,20 @@ export default function AdAnalysis() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Head>
         <title>광고 경쟁력 분석 | GPTKOREA 키워드 분석 서비스</title>
         <meta name="description" content="광고 검색결과 캡처 이미지를 분석하여 광고 경쟁력을 진단하고 개선안을 제시합니다." />
       </Head>
-      
-      <main className="max-w-4xl mx-auto px-4 py-8 sm:py-12">
-        {/* 헤더 섹션 - 키워드 분석 페이지와 스타일 통일 */}
-        <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-4">
+
+      <main className="max-w-4xl mx-auto px-4 pt-10 pb-12">
+        {/* 헤더 섹션 */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
             광고 경쟁력 분석
           </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            광고 검색결과 캡처 이미지를 업로드하여 경쟁력을 분석하고 
-            <br className="hidden md:block" />
-            구체적인 개선 방안을 받아보세요.
+          <p className="text-gray-500">
+            광고 검색결과 캡처 이미지를 업로드하여 경쟁력을 분석하고 구체적인 개선 방안을 받아보세요.
           </p>
         </div>
       

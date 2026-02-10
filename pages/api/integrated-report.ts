@@ -98,7 +98,7 @@ function buildDataSummary(
   // 분석 목적 컨텍스트 추가
   const analysisContext: Record<KeywordType, string> = {
     general: '📋 분석 목적: 검색광고 캠페인 최적화를 위한 키워드/광고 전략 수립',
-    shopping: '🛒 분석 목적: 네이버 쇼핑 상품 판매 최적화를 위한 시장/가격/경쟁 전략 수립',
+    shopping: '🛒 분석 목적: 네이버 쇼핑/쿠팡 멀티 플랫폼 상품 판매 최적화를 위한 시장/가격/경쟁 전략 수립',
     brand: '🏷️ 분석 목적: 브랜드 경쟁력 강화를 위한 포지셔닝/차별화 전략 수립',
   };
 
@@ -217,12 +217,18 @@ function buildDataSummary(
 
   // 쇼핑 검색 분석 데이터 요약 (쇼핑 유형)
   if (shoppingAnalysis && keywordType === 'shopping') {
-    summary += '\n## 쇼핑 검색 분석 데이터\n\n';
+    const sourceLabel = shoppingAnalysis.sources?.length === 2
+      ? '네이버 쇼핑 + 쿠팡'
+      : shoppingAnalysis.sources?.includes('coupang') ? '쿠팡' : '네이버 쇼핑';
+    summary += `\n## 쇼핑 검색 분석 데이터 (소스: ${sourceLabel})\n\n`;
     summary += `### 가격대 분석\n${shoppingAnalysis.gptAnalysis.priceAnalysis}\n\n`;
     summary += `### 주요 브랜드/판매처\n${shoppingAnalysis.gptAnalysis.topBrands}\n\n`;
     summary += `### 상품 특성\n${shoppingAnalysis.gptAnalysis.productFeatures}\n\n`;
     summary += `### 소비자 구매 결정 요인\n${shoppingAnalysis.gptAnalysis.purchaseFactors}\n\n`;
     summary += `### 시장 포지셔닝 전략\n${shoppingAnalysis.gptAnalysis.marketPositioning}\n\n`;
+    if (shoppingAnalysis.gptAnalysis.platformComparison) {
+      summary += `### 네이버 vs 쿠팡 플랫폼 비교\n${shoppingAnalysis.gptAnalysis.platformComparison}\n\n`;
+    }
     if (shoppingAnalysis.gptAnalysis.recommendations?.length > 0) {
       summary += `### 마케팅 추천 사항\n`;
       shoppingAnalysis.gptAnalysis.recommendations.forEach((rec, idx) => {

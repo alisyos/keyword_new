@@ -1711,13 +1711,15 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
   );
 };
 
-// ===== Step 4: 쇼핑 검색 분석 (쇼핑 유형용) =====
+// ===== Step 4: 쇼핑 검색 분석 (쇼핑 유형용 - 네이버/쿠팡 멀티 플랫폼) =====
 interface Step4ShoppingProps {
   keyword: string;
   shoppingAnalysis: ShoppingSearchAnalysisResult | null;
   loading: boolean;
-  shoppingText: string;
-  onShoppingTextChange: (text: string) => void;
+  naverShoppingText: string;
+  coupangShoppingText: string;
+  onNaverShoppingTextChange: (text: string) => void;
+  onCoupangShoppingTextChange: (text: string) => void;
   onAnalyze: () => void;
   onReanalyze: () => void;
   onPrev: () => void;
@@ -1727,57 +1729,90 @@ const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
   keyword,
   shoppingAnalysis,
   loading,
-  shoppingText,
-  onShoppingTextChange,
+  naverShoppingText,
+  coupangShoppingText,
+  onNaverShoppingTextChange,
+  onCoupangShoppingTextChange,
   onAnalyze,
   onReanalyze,
   onPrev,
 }) => {
+  const hasAnyText = naverShoppingText.trim() || coupangShoppingText.trim();
+
   return (
     <div>
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">쇼핑 검색 분석</h2>
-        <p className="text-gray-600">네이버 쇼핑 검색 결과를 분석하여 이커머스 마케팅 인사이트를 제공합니다.</p>
+        <p className="text-gray-600">네이버 쇼핑 / 쿠팡 검색 결과를 분석하여 이커머스 마케팅 인사이트를 제공합니다.</p>
       </div>
 
       {!shoppingAnalysis && !loading && (
         <>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start gap-3">
-              <div className="text-2xl">💡</div>
-              <div>
-                <p className="text-sm text-blue-800 font-medium mb-1">분석 방법</p>
-                <ol className="text-sm text-blue-700 list-decimal list-inside space-y-1">
-                  <li>네이버에서 "{keyword}" 검색</li>
-                  <li>쇼핑 탭 클릭</li>
-                  <li>검색 결과를 드래그하여 선택 후 복사 (Ctrl+C)</li>
-                  <li>아래 입력창에 붙여넣기 (Ctrl+V)</li>
-                </ol>
-              </div>
-            </div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-indigo-800">
+              두 플랫폼 모두 입력하면 <strong>비교 분석</strong>이 포함됩니다. 하나만 입력해도 분석 가능합니다.
+            </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              쇼핑 검색 결과 붙여넣기 <span className="text-red-500">*</span>
-            </label>
+          {/* 네이버 쇼핑 섹션 */}
+          <div className="mb-6">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-3">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">🟢</div>
+                <div>
+                  <p className="text-sm text-green-800 font-medium mb-1">네이버 쇼핑 검색 결과</p>
+                  <ol className="text-sm text-green-700 list-decimal list-inside space-y-1">
+                    <li>네이버에서 &ldquo;{keyword}&rdquo; 검색</li>
+                    <li>쇼핑 탭 클릭</li>
+                    <li>검색 결과를 드래그하여 선택 후 복사 (Ctrl+C)</li>
+                    <li>아래 입력창에 붙여넣기 (Ctrl+V)</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
             <textarea
-              value={shoppingText}
-              onChange={(e) => onShoppingTextChange(e.target.value)}
-              placeholder="네이버 쇼핑 검색 결과를 복사하여 붙여넣어 주세요.&#10;&#10;예시:&#10;[상품명] 다이어트 도시락 냉동 식단 ...&#10;가격: 29,900원&#10;리뷰: 4.8 (1,234)&#10;배송: 무료배송"
-              className="w-full h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono resize-y"
+              value={naverShoppingText}
+              onChange={(e) => onNaverShoppingTextChange(e.target.value)}
+              placeholder={"네이버 쇼핑 검색 결과를 복사하여 붙여넣어 주세요.\n\n예시:\n[상품명] 다이어트 도시락 냉동 식단 ...\n가격: 29,900원\n리뷰: 4.8 (1,234)\n배송: 무료배송"}
+              className="w-full h-48 p-4 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-mono resize-y"
             />
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               상품명, 가격, 리뷰, 판매처 등의 정보가 포함될수록 분석 품질이 향상됩니다.
+            </p>
+          </div>
+
+          {/* 쿠팡 섹션 */}
+          <div className="mb-6">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-3">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">🟠</div>
+                <div>
+                  <p className="text-sm text-orange-800 font-medium mb-1">쿠팡 검색 결과</p>
+                  <ol className="text-sm text-orange-700 list-decimal list-inside space-y-1">
+                    <li>쿠팡에서 &ldquo;{keyword}&rdquo; 검색</li>
+                    <li>검색 결과를 드래그하여 선택 후 복사 (Ctrl+C)</li>
+                    <li>아래 입력창에 붙여넣기 (Ctrl+V)</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+            <textarea
+              value={coupangShoppingText}
+              onChange={(e) => onCoupangShoppingTextChange(e.target.value)}
+              placeholder={"쿠팡 검색 결과를 복사하여 붙여넣어 주세요.\n\n예시:\n[상품명] 다이어트 도시락 세트 ...\n가격: 27,900원\n리뷰: 4.7 (2,345)\n로켓배송"}
+              className="w-full h-48 p-4 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm font-mono resize-y"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              쿠팡 로켓배송, 가격, 리뷰 등의 정보가 포함될수록 분석 품질이 향상됩니다.
             </p>
           </div>
 
           <div className="flex justify-center gap-4 mt-6">
             <button
               onClick={onAnalyze}
-              disabled={!shoppingText.trim()}
+              disabled={!hasAnyText}
               className={`px-6 py-3 font-semibold rounded-lg transition-all ${
-                shoppingText.trim()
+                hasAnyText
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md hover:shadow-lg'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
@@ -1790,7 +1825,20 @@ const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
 
       {shoppingAnalysis && !loading && (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            {/* 소스 배지 */}
+            <div className="flex gap-2">
+              {shoppingAnalysis.sources?.includes('naver') && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  🟢 네이버 쇼핑
+                </span>
+              )}
+              {shoppingAnalysis.sources?.includes('coupang') && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                  🟠 쿠팡
+                </span>
+              )}
+            </div>
             <button
               onClick={onReanalyze}
               className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
@@ -1839,6 +1887,14 @@ const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
                 <div className="text-sm font-bold text-pink-700 mb-2">📈 시장 포지셔닝 전략</div>
                 <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.marketPositioning}</p>
               </div>
+
+              {/* 네이버 vs 쿠팡 비교 (두 플랫폼 모두 입력 시) */}
+              {shoppingAnalysis.gptAnalysis.platformComparison && (
+                <div className="bg-white rounded-lg p-4 border-l-4 border-cyan-500">
+                  <div className="text-sm font-bold text-cyan-700 mb-2">🔄 네이버 vs 쿠팡 비교</div>
+                  <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.platformComparison}</p>
+                </div>
+              )}
 
               {/* 마케팅 추천 */}
               <div className="bg-white rounded-lg p-4 border-l-4 border-amber-500">
@@ -2432,7 +2488,8 @@ export default function IntegratedAnalysisPage() {
         adText: '',
         skipAdAnalysis: false,
         shoppingAnalysis: null,
-        shoppingText: '',
+        naverShoppingText: '',
+        coupangShoppingText: '',
       });
       setSelectedFile(null);
     }
@@ -2458,7 +2515,8 @@ export default function IntegratedAnalysisPage() {
       const typeSpecificReset: Partial<IntegratedAnalysisState> = {
         keywordType: newType,
         shoppingAnalysis: null,
-        shoppingText: '',
+        naverShoppingText: '',
+        coupangShoppingText: '',
         brandComparison: null,
       };
       // 브랜드 유형으로 변경 시 경쟁사 브랜드 배열 초기화
@@ -2725,10 +2783,10 @@ export default function IntegratedAnalysisPage() {
     }
   };
 
-  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용)
+  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용 - 네이버/쿠팡)
   const handleShoppingAnalysis = async () => {
-    if (!analysisState.shoppingText.trim()) {
-      setError('쇼핑 검색 결과를 붙여넣어 주세요.');
+    if (!analysisState.naverShoppingText.trim() && !analysisState.coupangShoppingText.trim()) {
+      setError('네이버 쇼핑 또는 쿠팡 검색 결과 중 하나 이상을 입력해주세요.');
       return;
     }
 
@@ -2737,7 +2795,8 @@ export default function IntegratedAnalysisPage() {
     try {
       const response = await axios.post('/api/shopping-search-analysis', {
         keyword: analysisState.keyword,
-        shoppingText: analysisState.shoppingText,
+        naverShoppingText: analysisState.naverShoppingText,
+        coupangShoppingText: analysisState.coupangShoppingText,
       });
 
       updateState({
@@ -2882,7 +2941,7 @@ export default function IntegratedAnalysisPage() {
   };
 
   const handleReanalyzeStep4Shopping = () => {
-    updateState({ shoppingAnalysis: null, shoppingText: '' });
+    updateState({ shoppingAnalysis: null, naverShoppingText: '', coupangShoppingText: '' });
     // 쇼핑 입력 UI로 돌아감
   };
 
@@ -2945,17 +3004,17 @@ export default function IntegratedAnalysisPage() {
     pptLoading ? 'PPT를 생성 중입니다...' : '';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Head>
         <title>키워드 통합 분석 | GPTKOREA 키워드 분석 서비스</title>
         <meta name="description" content="키워드 분석, 콘텐츠 분석, 광고 분석을 통합하여 종합 마케팅 리포트를 제공합니다." />
       </Head>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 sm:py-12 pt-20">
+      <main className="max-w-5xl mx-auto px-4 pt-10 pb-12">
         {/* 헤더 */}
-        <div className="text-left mb-4">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">키워드 통합 분석</h1>
-          <p className="text-sm text-gray-500">키워드 분석 및 마케팅 전략을 포함한 종합 리포트 생성</p>
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">키워드 통합 분석</h1>
+          <p className="text-gray-500">키워드 분석 및 마케팅 전략을 포함한 종합 리포트 생성</p>
         </div>
 
         {/* 에러 메시지 */}
@@ -3074,8 +3133,10 @@ export default function IntegratedAnalysisPage() {
                 keyword={analysisState.keyword}
                 shoppingAnalysis={analysisState.shoppingAnalysis}
                 loading={analysisState.shoppingAnalysisLoading}
-                shoppingText={analysisState.shoppingText}
-                onShoppingTextChange={(text) => updateState({ shoppingText: text })}
+                naverShoppingText={analysisState.naverShoppingText}
+                coupangShoppingText={analysisState.coupangShoppingText}
+                onNaverShoppingTextChange={(text) => updateState({ naverShoppingText: text })}
+                onCoupangShoppingTextChange={(text) => updateState({ coupangShoppingText: text })}
                 onAnalyze={handleShoppingAnalysis}
                 onReanalyze={handleReanalyzeStep4Shopping}
                 onPrev={() => goToStep(3)}

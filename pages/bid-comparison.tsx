@@ -190,7 +190,7 @@ export default function BidComparison() {
         <meta name="description" content="최대 5개 키워드의 순위별 입찰가를 비교 분석합니다." />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 pt-20 pb-12 px-4">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 pt-10 pb-12 px-4">
         <div className="max-w-7xl mx-auto">
           {/* 헤더 */}
           <div className="text-center mb-8">

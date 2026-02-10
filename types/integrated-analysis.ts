@@ -81,11 +81,13 @@ export interface AdAnalysisResult {
   }>;
 }
 
-// 쇼핑 검색 분석 결과 (텍스트 붙여넣기 기반)
+// 쇼핑 검색 분석 결과 (텍스트 붙여넣기 기반 - 네이버/쿠팡 멀티 플랫폼)
 export interface ShoppingSearchAnalysisResult {
   keyword: string;
   timestamp: string;
-  inputText: string;
+  naverInputText?: string;
+  coupangInputText?: string;
+  sources: ('naver' | 'coupang')[];
   gptAnalysis: {
     priceAnalysis: string;
     topBrands: string;
@@ -93,6 +95,7 @@ export interface ShoppingSearchAnalysisResult {
     purchaseFactors: string;
     marketPositioning: string;
     recommendations: string[];
+    platformComparison?: string;
   };
 }
 
@@ -315,10 +318,11 @@ export interface IntegratedAnalysisState {
   adInputMode: 'image' | 'text';
   adText: string;
 
-  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용)
+  // Step 4: 쇼핑 검색 분석 (쇼핑 유형용 - 네이버/쿠팡)
   shoppingAnalysis: ShoppingSearchAnalysisResult | null;
   shoppingAnalysisLoading: boolean;
-  shoppingText: string;
+  naverShoppingText: string;
+  coupangShoppingText: string;
 
   // 브랜드 비교 (브랜드 유형용)
   brandComparison: BrandComparisonResult | null;
@@ -377,7 +381,8 @@ export const initialAnalysisState: IntegratedAnalysisState = {
   adText: '',
   shoppingAnalysis: null,
   shoppingAnalysisLoading: false,
-  shoppingText: '',
+  naverShoppingText: '',
+  coupangShoppingText: '',
   brandComparison: null,
   brandComparisonLoading: false,
   integratedReport: null,

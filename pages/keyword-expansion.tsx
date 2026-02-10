@@ -15,6 +15,10 @@ interface KeywordData {
   compIdx: string;
 }
 
+interface KeywordDataWithSource extends KeywordData {
+  sourceKeywords: string[];
+}
+
 interface SearchResult {
   keyword: string;
   timestamp: string;
@@ -22,42 +26,139 @@ interface SearchResult {
   keywordList: KeywordData[];
 }
 
+interface MultiSearchResult {
+  keywords: string[];
+  timestamp: string;
+  keywordList: KeywordDataWithSource[];
+  perKeywordResults: Record<string, SearchResult>;
+}
+
 interface SortConfig {
   key: string;
   direction: 'asc' | 'desc' | null;
 }
 
+const KEYWORD_COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
+
 export default function KeywordExpansion() {
-  const [keyword, setKeyword] = useState('');
+  const [keywords, setKeywords] = useState<string[]>(['']);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SearchResult | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [result, setResult] = useState<MultiSearchResult | null>(null);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [analysis, setAnalysis] = useState('');
   const [userQuery, setUserQuery] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const handleKeywordChange = (index: number, value: string) => {
+    const newKeywords = [...keywords];
+    newKeywords[index] = value;
+    setKeywords(newKeywords);
+  };
+
+  const addKeyword = () => {
+    if (keywords.length < 5) {
+      setKeywords([...keywords, '']);
+    }
+  };
+
+  const removeKeyword = (index: number) => {
+    if (keywords.length > 1) {
+      const newKeywords = keywords.filter((_, i) => i !== index);
+      setKeywords(newKeywords);
+    }
+  };
+
+  const mergeAndDeduplicate = (
+    uniqueKeywords: string[],
+    perKeywordResults: Record<string, SearchResult>
+  ): KeywordDataWithSource[] => {
+    const merged = new Map<string, KeywordDataWithSource>();
+
+    for (const seedKeyword of uniqueKeywords) {
+      const searchResult = perKeywordResults[seedKeyword];
+      if (!searchResult) continue;
+
+      for (const item of searchResult.keywordList) {
+        const existing = merged.get(item.relKeyword);
+        if (existing) {
+          if (!existing.sourceKeywords.includes(seedKeyword)) {
+            existing.sourceKeywords.push(seedKeyword);
+          }
+        } else {
+          merged.set(item.relKeyword, {
+            ...item,
+            sourceKeywords: [seedKeyword],
+          });
+        }
+      }
+    }
+
+    return Array.from(merged.values());
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!keyword.trim()) {
+
+    const filledKeywords = keywords.map(k => k.trim()).filter(k => k);
+    if (filledKeywords.length === 0) {
       setError('키워드를 입력해주세요.');
       return;
     }
 
+    const uniqueKeywords = Array.from(new Set(filledKeywords));
+
     try {
       setLoading(true);
       setError(null);
+      setWarning(null);
       setResult(null);
-      
-      const response = await axios.post('/api/keyword-expansion', {
-        keyword: keyword.trim()
+      setShowAnalysis(false);
+      setAnalysis('');
+
+      const results = await Promise.allSettled(
+        uniqueKeywords.map(kw =>
+          axios.post('/api/keyword-expansion', { keyword: kw })
+        )
+      );
+
+      const perKeywordResults: Record<string, SearchResult> = {};
+      const failedKeywords: string[] = [];
+
+      results.forEach((res, idx) => {
+        const kw = uniqueKeywords[idx];
+        if (res.status === 'fulfilled') {
+          perKeywordResults[kw] = res.value.data.data;
+        } else {
+          failedKeywords.push(kw);
+        }
       });
-      
-      setResult(response.data.data);
+
+      const succeededKeywords = uniqueKeywords.filter(kw => perKeywordResults[kw]);
+
+      if (succeededKeywords.length === 0) {
+        setError('모든 키워드의 검색에 실패했습니다. 다시 시도해주세요.');
+        return;
+      }
+
+      if (failedKeywords.length > 0) {
+        setWarning(`일부 키워드 검색에 실패했습니다: ${failedKeywords.join(', ')}`);
+      }
+
+      const mergedList = mergeAndDeduplicate(succeededKeywords, perKeywordResults);
+
+      setResult({
+        keywords: succeededKeywords,
+        timestamp: new Date().toISOString(),
+        keywordList: mergedList,
+        perKeywordResults,
+      });
+      setActiveFilters([...succeededKeywords]);
     } catch (err) {
       console.error('Error:', err);
       setError('키워드 확장 데이터를 가져오는 중 오류가 발생했습니다.');
@@ -65,6 +166,71 @@ export default function KeywordExpansion() {
       setLoading(false);
     }
   };
+
+  const getFilteredKeywordList = (): KeywordDataWithSource[] => {
+    if (!result) return [];
+    if (activeFilters.length === result.keywords.length) {
+      return result.keywordList;
+    }
+    return result.keywordList.filter(item =>
+      item.sourceKeywords.some(sk => activeFilters.includes(sk))
+    );
+  };
+
+  const getSortedKeywordList = (): KeywordDataWithSource[] => {
+    const filtered = getFilteredKeywordList();
+    if (!sortConfig.direction) {
+      return filtered;
+    }
+
+    return [...filtered].sort((a, b) => {
+      if (a[sortConfig.key as keyof KeywordData] === null) return 1;
+      if (b[sortConfig.key as keyof KeywordData] === null) return -1;
+
+      if (sortConfig.key === 'compIdx') {
+        const order: Record<string, number> = { 'HIGH': 3, 'MIDDLE': 2, 'LOW': 1 };
+        return sortConfig.direction === 'asc'
+          ? (order[a[sortConfig.key]] || 0) - (order[b[sortConfig.key]] || 0)
+          : (order[b[sortConfig.key]] || 0) - (order[a[sortConfig.key]] || 0);
+      }
+
+      const numericFields = [
+        'monthlyPcQcCnt', 'monthlyMobileQcCnt',
+        'monthlyAvePcClkCnt', 'monthlyAveMobileClkCnt',
+        'monthlyAvePcCtr', 'monthlyAveMobileCtr',
+        'plAvgDepth'
+      ];
+
+      if (numericFields.includes(sortConfig.key)) {
+        const toNum = (v: any): number => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+        const aVal = toNum(a[sortConfig.key as keyof KeywordData]);
+        const bVal = toNum(b[sortConfig.key as keyof KeywordData]);
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      return sortConfig.direction === 'asc'
+        ? a[sortConfig.key as keyof KeywordData] > b[sortConfig.key as keyof KeywordData] ? 1 : -1
+        : b[sortConfig.key as keyof KeywordData] > a[sortConfig.key as keyof KeywordData] ? 1 : -1;
+    });
+  };
+
+  const toggleFilter = (keyword: string) => {
+    setActiveFilters(prev => {
+      if (prev.includes(keyword)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(k => k !== keyword);
+      }
+      return [...prev, keyword];
+    });
+  };
+
+  const selectAllFilters = () => {
+    if (result) {
+      setActiveFilters([...result.keywords]);
+    }
+  };
+
+  const isMultiKeyword = result && result.keywords.length > 1;
 
   const formatNumber = (value: string) => {
     if (value === '<10') return value;
@@ -78,7 +244,7 @@ export default function KeywordExpansion() {
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
-    
+
     if (sortConfig.key === key) {
       if (sortConfig.direction === 'asc') {
         direction = 'desc';
@@ -86,30 +252,8 @@ export default function KeywordExpansion() {
         direction = null;
       }
     }
-    
+
     setSortConfig({ key, direction });
-  };
-
-  const getSortedKeywordList = () => {
-    if (!sortConfig.direction) {
-      return result?.keywordList || [];
-    }
-
-    return [...(result?.keywordList || [])].sort((a, b) => {
-      if (a[sortConfig.key] === null) return 1;
-      if (b[sortConfig.key] === null) return -1;
-      
-      if (sortConfig.key === 'compIdx') {
-        const order = { 'HIGH': 3, 'MIDDLE': 2, 'LOW': 1 };
-        return sortConfig.direction === 'asc' 
-          ? order[a[sortConfig.key]] - order[b[sortConfig.key]]
-          : order[b[sortConfig.key]] - order[a[sortConfig.key]];
-      }
-      
-      return sortConfig.direction === 'asc'
-        ? a[sortConfig.key] > b[sortConfig.key] ? 1 : -1
-        : b[sortConfig.key] > a[sortConfig.key] ? 1 : -1;
-    });
   };
 
   const renderSortIcon = (key: string) => {
@@ -137,8 +281,8 @@ export default function KeywordExpansion() {
     );
 
     return (
-      <th 
-        scope="col" 
+      <th
+        scope="col"
         className={`px-6 py-4 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-blue-100/50 ${
           field === 'relKeyword' ? 'text-left' : 'text-center'
         }`}
@@ -154,7 +298,6 @@ export default function KeywordExpansion() {
 
   const handleQueryChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setUserQuery(e.target.value);
-    // 높이 자동 조절
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
@@ -166,7 +309,6 @@ export default function KeywordExpansion() {
       e.preventDefault();
       handleAnalyze();
     }
-    // Shift+Enter는 기본 동작(줄바꿈) 유지
   };
 
   const handleAnalyze = async () => {
@@ -218,7 +360,7 @@ export default function KeywordExpansion() {
         body: JSON.stringify({
           keywordData: getSortedKeywordList(),
           analysis: analysis,
-          searchKeyword: result.keyword,
+          searchKeyword: result.keywords.join(', '),
         }),
       });
 
@@ -228,7 +370,6 @@ export default function KeywordExpansion() {
 
       const data = await response.json();
 
-      // Base64를 Blob으로 변환
       const binaryString = atob(data.data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -236,7 +377,6 @@ export default function KeywordExpansion() {
       }
       const blob = new Blob([bytes], { type: data.mimeType });
 
-      // 다운로드 트리거
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -253,23 +393,25 @@ export default function KeywordExpansion() {
     }
   };
 
+  const sortedList = getSortedKeywordList();
+  const filteredCount = getFilteredKeywordList().length;
+  const totalCount = result?.keywordList.length || 0;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Head>
         <title>키워드 확장 | 키워드 인사이트</title>
         <meta name="description" content="네이버 검색광고 API를 활용한 연관 키워드 확장 도구" />
       </Head>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:py-12">
+      <main className="max-w-7xl mx-auto px-4 pt-10 pb-12">
         {/* 헤더 섹션 */}
-        <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
             키워드 확장
           </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            입력한 키워드와 관련된 연관 키워드를 찾아보세요
-            <br className="hidden md:block" />
-            검색량, 클릭수, 경쟁정도 등 상세 정보를 확인할 수 있습니다.
+          <p className="text-gray-500">
+            입력한 키워드와 관련된 연관 키워드를 찾아보세요. 최대 5개 키워드를 동시에 검색하여 통합 결과를 확인할 수 있습니다.
           </p>
         </div>
 
@@ -278,31 +420,82 @@ export default function KeywordExpansion() {
           <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
             <div className="p-6">
               <form onSubmit={handleSearch} className="space-y-4">
-                <div className="flex gap-4">
-                  <input
-                    type="text"
-                    value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
-                    placeholder="확장하고 싶은 키워드를 입력하세요"
-                    className="flex-1 px-6 py-4 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 transition-colors font-medium"
-                  >
-                    {loading ? '검색 중...' : '검색'}
-                  </button>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  검색 키워드 (최대 5개)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {keywords.map((keyword, index) => (
+                    <div key={index} className="relative flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                          style={{ backgroundColor: KEYWORD_COLORS[index] }}
+                        />
+                        <input
+                          type="text"
+                          value={keyword}
+                          onChange={(e) => handleKeywordChange(index, e.target.value)}
+                          placeholder={`키워드 ${index + 1}`}
+                          className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeKeyword(index)}
+                        disabled={keywords.length <= 1}
+                        className={`p-2 rounded-lg transition-all ${
+                          keywords.length <= 1
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                        }`}
+                        title={keywords.length <= 1 ? '최소 1개 키워드 필요' : '키워드 제거'}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={addKeyword}
+                  disabled={keywords.length >= 5}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    keywords.length >= 5
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  키워드 추가 {keywords.length >= 5 && '(최대 5개)'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 transition-colors font-medium"
+                >
+                  {loading ? '검색 중...' : '검색'}
+                </button>
               </form>
             </div>
           </div>
         </div>
-        
+
         {error && (
           <div className="max-w-4xl mx-auto mb-8">
             <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">
               {error}
+            </div>
+          </div>
+        )}
+
+        {warning && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <div className="p-4 bg-yellow-50 text-yellow-700 rounded-xl border border-yellow-100">
+              {warning}
             </div>
           </div>
         )}
@@ -409,14 +602,59 @@ export default function KeywordExpansion() {
                       <div className="flex items-center gap-2">
                         <h2 className="text-xl font-semibold">연관 키워드 목록</h2>
                         <span className="text-sm bg-white/20 px-3 py-1 rounded-full">
-                          총 {result.keywordList.length}개
+                          {isMultiKeyword && filteredCount !== totalCount
+                            ? `전체 ${totalCount}개 중 ${filteredCount}개`
+                            : `총 ${totalCount}개`
+                          }
                         </span>
                       </div>
                       <div className="text-sm opacity-90">
-                        검색키워드: {result.keyword} / 검색 시간: {new Date(result.timestamp).toLocaleString()}
+                        검색키워드: {result.keywords.join(', ')} / 검색 시간: {new Date(result.timestamp).toLocaleString()}
                       </div>
                     </div>
                   </div>
+
+                  {/* 필터 칩 (키워드 2개 이상일 때만) */}
+                  {isMultiKeyword && (
+                    <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-gray-500 mr-1">필터:</span>
+                        <button
+                          onClick={selectAllFilters}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                            activeFilters.length === result.keywords.length
+                              ? 'bg-gray-800 text-white border-gray-800'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                          }`}
+                        >
+                          전체
+                        </button>
+                        {result.keywords.map((kw, idx) => {
+                          const isActive = activeFilters.includes(kw);
+                          const color = KEYWORD_COLORS[idx];
+                          return (
+                            <button
+                              key={kw}
+                              onClick={() => toggleFilter(kw)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 ${
+                                isActive
+                                  ? 'text-white border-transparent'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                              }`}
+                              style={isActive ? { backgroundColor: color, borderColor: color } : {}}
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full inline-block"
+                                style={{ backgroundColor: isActive ? '#fff' : color }}
+                              />
+                              {kw}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -433,10 +671,28 @@ export default function KeywordExpansion() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {getSortedKeywordList().map((item, index) => (
+                        {sortedList.map((item, index) => (
                           <tr key={index} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-left text-gray-900">
-                              {item.relKeyword}
+                              <div className="flex items-center gap-2">
+                                {isMultiKeyword && (
+                                  <span className="flex gap-0.5 shrink-0">
+                                    {item.sourceKeywords.map(sk => {
+                                      const colorIdx = result.keywords.indexOf(sk);
+                                      if (colorIdx === -1) return null;
+                                      return (
+                                        <span
+                                          key={sk}
+                                          className="w-2 h-2 rounded-full inline-block"
+                                          style={{ backgroundColor: KEYWORD_COLORS[colorIdx] }}
+                                          title={sk}
+                                        />
+                                      );
+                                    })}
+                                  </span>
+                                )}
+                                {item.relKeyword}
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-900">
                               {formatNumber(item.monthlyPcQcCnt)}
@@ -492,16 +748,16 @@ export default function KeywordExpansion() {
           </div>
         )}
       </main>
-      
+
       {/* 푸터 */}
       <footer className="mt-16 border-t border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-8">
           <div className="text-center text-gray-600 text-sm">
-            <p>© 2025 GPTKOREA 키워드 분석 서비스. All rights reserved.</p>
+            <p>&copy; 2025 GPTKOREA 키워드 분석 서비스. All rights reserved.</p>
             <p className="mt-2">네이버와 유튜브 검색 데이터를 활용한 키워드 분석 서비스입니다.</p>
           </div>
         </div>
       </footer>
     </div>
   );
-} 
+}
