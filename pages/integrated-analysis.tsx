@@ -917,6 +917,131 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
   );
 };
 
+// ===== 공유 헬퍼 함수 =====
+const renderSentimentBar = (sentiment: { positive: number; negative: number; neutral: number }) => (
+  <div className="flex h-4 rounded-full overflow-hidden bg-gray-200">
+    <div className="bg-green-500" style={{ width: `${sentiment.positive}%` }} />
+    <div className="bg-gray-400" style={{ width: `${sentiment.neutral}%` }} />
+    <div className="bg-red-500" style={{ width: `${sentiment.negative}%` }} />
+  </div>
+);
+
+const categorizeDateRanges = (contentItems: Array<{ title: string; link: string; description: string; sentiment?: 'positive' | 'negative' | 'neutral'; score?: number; publishedAt?: string }>) => {
+  if (!contentItems || contentItems.length === 0) {
+    return { threeMonths: [] as typeof contentItems, oneYear: [] as typeof contentItems, twoYears: [] as typeof contentItems, older: [] as typeof contentItems, noDate: [] as typeof contentItems };
+  }
+
+  const now = new Date();
+  const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+  const twoYearsAgo = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+
+  const categorized = {
+    threeMonths: [] as typeof contentItems,
+    oneYear: [] as typeof contentItems,
+    twoYears: [] as typeof contentItems,
+    older: [] as typeof contentItems,
+    noDate: [] as typeof contentItems,
+  };
+
+  contentItems.forEach(item => {
+    if (!item.publishedAt) {
+      categorized.noDate.push(item);
+      return;
+    }
+    try {
+      const publishDate = new Date(item.publishedAt);
+      if (publishDate > threeMonthsAgo) {
+        categorized.threeMonths.push(item);
+      } else if (publishDate > oneYearAgo) {
+        categorized.oneYear.push(item);
+      } else if (publishDate > twoYearsAgo) {
+        categorized.twoYears.push(item);
+      } else {
+        categorized.older.push(item);
+      }
+    } catch (e) {
+      categorized.noDate.push(item);
+    }
+  });
+
+  return categorized;
+};
+
+const getDateAnalysisChartData = (contentItems: Array<{ publishedAt?: string }>) => {
+  const categorized = categorizeDateRanges(contentItems as any);
+  return {
+    threeMonths: categorized.threeMonths.length,
+    oneYear: categorized.oneYear.length,
+    twoYears: categorized.twoYears.length,
+    older: categorized.older.length,
+  };
+};
+
+// ===== 도넛 차트 컴포넌트 (긍부정평가용) =====
+const DonutChart = ({ positive, negative, neutral }: { positive: number; negative: number; neutral: number }) => {
+  const total = positive + negative + neutral;
+  const positivePercent = Math.round((positive / total) * 100) || 0;
+  const negativePercent = Math.round((negative / total) * 100) || 0;
+  const neutralPercent = Math.round((neutral / total) * 100) || 0;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative w-32 h-32">
+        <svg className="w-full h-full" viewBox="0 0 36 36">
+          <circle
+            cx="18" cy="18" r="15.91549430918954"
+            fill="transparent" stroke="#4ade80" strokeWidth="3"
+            strokeDasharray={`${positivePercent} ${100-positivePercent}`}
+            strokeDashoffset={25}
+            className="transition-all duration-1000 ease-out"
+          />
+          {negativePercent > 0 && (
+            <circle
+              cx="18" cy="18" r="15.91549430918954"
+              fill="transparent" stroke="#f87171" strokeWidth="3"
+              strokeDasharray={`${negativePercent} ${100-negativePercent}`}
+              strokeDashoffset={25 - positivePercent}
+              className="transition-all duration-1000 ease-out"
+            />
+          )}
+          {neutralPercent > 0 && (
+            <circle
+              cx="18" cy="18" r="15.91549430918954"
+              fill="transparent" stroke="#9ca3af" strokeWidth="3"
+              strokeDasharray={`${neutralPercent} ${100-neutralPercent}`}
+              strokeDashoffset={25 - (positivePercent + negativePercent)}
+              className="transition-all duration-1000 ease-out"
+            />
+          )}
+          <g className="chart-text">
+            <text x="18" y="16" textAnchor="middle" alignmentBaseline="central" fontSize="5" fontWeight="bold">
+              {positivePercent}%
+            </text>
+            <text x="18" y="21" textAnchor="middle" alignmentBaseline="central" fontSize="2.5">
+              긍정적
+            </text>
+          </g>
+        </svg>
+      </div>
+      <div className="flex flex-wrap justify-center mt-4 gap-4">
+        <div className="flex items-center">
+          <div className="w-4 h-4 bg-green-400 rounded-full mr-2"></div>
+          <span className="text-sm">긍정 {positivePercent}%</span>
+        </div>
+        <div className="flex items-center">
+          <div className="w-4 h-4 bg-red-400 rounded-full mr-2"></div>
+          <span className="text-sm">부정 {negativePercent}%</span>
+        </div>
+        <div className="flex items-center">
+          <div className="w-4 h-4 bg-gray-400 rounded-full mr-2"></div>
+          <span className="text-sm">중립 {neutralPercent}%</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ===== Step 3: 콘텐츠 분석 =====
 interface Step3Props {
   keyword: string;
@@ -947,13 +1072,26 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
 
   const getChannelResult = (channel: ContentType) => contentAnalysis[channel];
 
-  const renderSentimentBar = (sentiment: { positive: number; negative: number; neutral: number }) => (
-    <div className="flex h-4 rounded-full overflow-hidden bg-gray-200">
-      <div className="bg-green-500" style={{ width: `${sentiment.positive}%` }} />
-      <div className="bg-gray-400" style={{ width: `${sentiment.neutral}%` }} />
-      <div className="bg-red-500" style={{ width: `${sentiment.negative}%` }} />
-    </div>
-  );
+  const getDateCategoryColor = (category: string) => {
+    switch (category) {
+      case 'threeMonths': return { bg: 'bg-blue-100', text: 'text-blue-600', bar: 'bg-blue-500' };
+      case 'oneYear': return { bg: 'bg-green-100', text: 'text-green-600', bar: 'bg-green-500' };
+      case 'twoYears': return { bg: 'bg-yellow-100', text: 'text-yellow-600', bar: 'bg-yellow-500' };
+      case 'older': return { bg: 'bg-red-100', text: 'text-red-600', bar: 'bg-red-500' };
+      default: return { bg: 'bg-gray-100', text: 'text-gray-600', bar: 'bg-gray-500' };
+    }
+  };
+
+  const getDateCategoryName = (category: string) => {
+    switch (category) {
+      case 'threeMonths': return '최근 3개월 이내';
+      case 'oneYear': return '3개월~1년 이내';
+      case 'twoYears': return '1년~2년 이내';
+      case 'older': return '2년 이상 전';
+      case 'noDate': return '날짜 정보 없음';
+      default: return '';
+    }
+  };
 
   return (
     <div>
@@ -1042,6 +1180,29 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
           {/* 탭 콘텐츠 */}
           {getChannelResult(activeTab) ? (
             <div className="space-y-6">
+              {/* 주요 키워드 */}
+              {getChannelResult(activeTab)?.keywords && getChannelResult(activeTab)!.keywords.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="font-semibold text-gray-800 mb-4">주요 키워드 (상위 10개)</h3>
+                  <div className="space-y-2">
+                    {getChannelResult(activeTab)!.keywords.slice(0, 10).map((kw, idx) => (
+                      <div key={idx} className="flex items-center">
+                        <span className="w-24 text-sm text-gray-700 truncate">{kw.keyword}</span>
+                        <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-500 h-2 rounded-full"
+                            style={{
+                              width: `${(kw.frequency / getChannelResult(activeTab)!.keywords[0].frequency) * 100}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm text-gray-500 w-10 text-right">{kw.frequency}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 감성 분석 */}
               {getChannelResult(activeTab)?.sentiment && (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -1055,7 +1216,7 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
                 </div>
               )}
 
-              {/* 긍정/부정 키워드 */}
+              {/* 감성 키워드 분석 */}
               {getChannelResult(activeTab)?.sentiment && (
                 getChannelResult(activeTab)!.sentiment!.positiveKeywords?.length > 0 ||
                 getChannelResult(activeTab)!.sentiment!.negativeKeywords?.length > 0
@@ -1105,64 +1266,244 @@ const Step3ContentAnalysis: React.FC<Step3Props> = ({
                 </div>
               )}
 
-              {/* 주요 키워드 */}
-              {getChannelResult(activeTab)?.keywords && getChannelResult(activeTab)!.keywords.length > 0 && (
+              {/* 긍부정평가 */}
+              {getChannelResult(activeTab)?.contentItems && getChannelResult(activeTab)!.contentItems!.length > 0 && (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="font-semibold text-gray-800 mb-4">주요 키워드 (상위 10개)</h3>
-                  <div className="space-y-2">
-                    {getChannelResult(activeTab)!.keywords.slice(0, 10).map((kw, idx) => (
-                      <div key={idx} className="flex items-center">
-                        <span className="w-24 text-sm text-gray-700 truncate">{kw.keyword}</span>
-                        <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-500 h-2 rounded-full"
-                            style={{
-                              width: `${(kw.frequency / getChannelResult(activeTab)!.keywords[0].frequency) * 100}%`,
-                            }}
-                          />
+                  <h3 className="font-semibold text-gray-800 mb-4">긍부정평가</h3>
+
+                  {/* DonutChart 요약 */}
+                  <div className="bg-white border border-gray-100 rounded-lg p-6 mb-6 shadow-sm">
+                    <h4 className="font-semibold text-gray-800 mb-4 text-center">긍부정 분석 요약</h4>
+                    {(() => {
+                      const items = getChannelResult(activeTab)!.contentItems!;
+                      const pos = items.filter(i => i.sentiment === 'positive').length;
+                      const neg = items.filter(i => i.sentiment === 'negative').length;
+                      const neu = items.filter(i => i.sentiment === 'neutral').length;
+                      const total = items.length;
+                      const posPercent = Math.round((pos / total) * 100);
+                      const negPercent = Math.round((neg / total) * 100);
+                      const neuPercent = 100 - posPercent - negPercent;
+
+                      return (
+                        <div className="flex flex-col md:flex-row justify-center items-center gap-8">
+                          <DonutChart positive={pos} negative={neg} neutral={neu} />
+                          <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-3 gap-3 text-center">
+                              <div className="bg-green-50 p-3 rounded-lg">
+                                <div className="text-2xl font-bold text-green-600">{pos}</div>
+                                <div className="text-xs text-gray-600">긍정 콘텐츠</div>
+                                <div className="text-sm font-medium text-green-600">{posPercent}%</div>
+                              </div>
+                              <div className="bg-gray-50 p-3 rounded-lg">
+                                <div className="text-2xl font-bold text-gray-600">{neu}</div>
+                                <div className="text-xs text-gray-600">중립 콘텐츠</div>
+                                <div className="text-sm font-medium text-gray-600">{neuPercent}%</div>
+                              </div>
+                              <div className="bg-red-50 p-3 rounded-lg">
+                                <div className="text-2xl font-bold text-red-600">{neg}</div>
+                                <div className="text-xs text-gray-600">부정 콘텐츠</div>
+                                <div className="text-sm font-medium text-red-600">{negPercent}%</div>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 text-center md:text-left">
+                              총 {total}개 콘텐츠 중 긍정적 콘텐츠가 {posPercent}%를 차지합니다.
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-sm text-gray-500 w-10 text-right">{kw.frequency}</span>
+                      );
+                    })()}
+                  </div>
+
+                  {/* 범례 */}
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">총 {getChannelResult(activeTab)!.contentItems!.length}개 콘텐츠 분석 결과</span>
+                    </div>
+                    <div className="flex space-x-3">
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 bg-green-400 rounded-full mr-1"></div>
+                        <span className="text-xs text-gray-600">긍정</span>
                       </div>
-                    ))}
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 bg-gray-400 rounded-full mr-1"></div>
+                        <span className="text-xs text-gray-600">중립</span>
+                      </div>
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 bg-red-400 rounded-full mr-1"></div>
+                        <span className="text-xs text-gray-600">부정</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* 콘텐츠 목록 */}
+              {/* 작성일 기준 분석 */}
               {getChannelResult(activeTab)?.contentItems && getChannelResult(activeTab)!.contentItems!.length > 0 && (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="font-semibold text-gray-800 mb-4">
-                    분석된 콘텐츠 ({getChannelResult(activeTab)!.contentItems!.length}개)
-                  </h3>
-                  <div className="space-y-3 max-h-[480px] overflow-y-auto">
-                    {getChannelResult(activeTab)!.contentItems!.map((item, idx) => (
-                      <div key={idx} className="flex items-start p-3 bg-gray-50 rounded-lg">
-                        <span
-                          className={`text-xs font-medium px-1.5 py-0.5 rounded mr-2 mt-0.5 flex-shrink-0 ${
-                            item.sentiment === 'positive'
-                              ? 'bg-green-100 text-green-700'
-                              : item.sentiment === 'negative'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {item.sentiment === 'positive' ? '긍정' : item.sentiment === 'negative' ? '부정' : '중립'}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <a
-                            href={item.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-medium text-gray-800 hover:text-blue-600 line-clamp-1"
-                          >
-                            {item.title.replace(/<[^>]*>/g, '')}
-                          </a>
-                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                            {item.description.replace(/<[^>]*>/g, '')}
-                          </p>
+                  <h3 className="font-semibold text-gray-800 mb-4">작성일 기준 분석</h3>
+
+                  {(() => {
+                    const items = getChannelResult(activeTab)!.contentItems!;
+                    const dateData = getDateAnalysisChartData(items);
+                    const total = dateData.threeMonths + dateData.oneYear + dateData.twoYears + dateData.older;
+
+                    if (total === 0) {
+                      return (
+                        <div className="text-center py-4">
+                          <p className="text-gray-500">작성일 정보가 있는 콘텐츠가 없습니다.</p>
+                        </div>
+                      );
+                    }
+
+                    const threeMonthsPercent = Math.round((dateData.threeMonths / total) * 100);
+                    const oneYearPercent = Math.round((dateData.oneYear / total) * 100);
+                    const twoYearsPercent = Math.round((dateData.twoYears / total) * 100);
+                    const olderPercent = Math.round((dateData.older / total) * 100);
+
+                    return (
+                      <div>
+                        {/* 작성일 분포 요약 */}
+                        <div className="bg-white border border-gray-100 rounded-lg p-6 shadow-sm">
+                          <h4 className="font-semibold text-gray-800 mb-4 text-center">작성일 분포</h4>
+                          <div className="w-full bg-gray-200 rounded-full h-6 mb-6 overflow-hidden">
+                            {dateData.threeMonths > 0 && (
+                              <div
+                                className="bg-blue-500 h-6 float-left text-xs font-medium text-blue-100 text-center p-1 leading-none"
+                                style={{ width: `${threeMonthsPercent}%` }}
+                              >
+                                {threeMonthsPercent}%
+                              </div>
+                            )}
+                            {dateData.oneYear > 0 && (
+                              <div
+                                className="bg-green-500 h-6 float-left text-xs font-medium text-green-100 text-center p-1 leading-none"
+                                style={{ width: `${oneYearPercent}%` }}
+                              >
+                                {oneYearPercent}%
+                              </div>
+                            )}
+                            {dateData.twoYears > 0 && (
+                              <div
+                                className="bg-yellow-500 h-6 float-left text-xs font-medium text-yellow-100 text-center p-1 leading-none"
+                                style={{ width: `${twoYearsPercent}%` }}
+                              >
+                                {twoYearsPercent}%
+                              </div>
+                            )}
+                            {dateData.older > 0 && (
+                              <div
+                                className="bg-red-500 h-6 float-left text-xs font-medium text-red-100 text-center p-1 leading-none"
+                                style={{ width: `${olderPercent}%` }}
+                              >
+                                {olderPercent}%
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 범례 */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                            {dateData.threeMonths > 0 && (
+                              <div className="flex items-center">
+                                <div className="w-4 h-4 bg-blue-500 rounded-md mr-2"></div>
+                                <div className="text-sm">
+                                  <div className="font-medium">최근 3개월</div>
+                                  <div className="text-gray-600">{dateData.threeMonths}개 ({threeMonthsPercent}%)</div>
+                                </div>
+                              </div>
+                            )}
+                            {dateData.oneYear > 0 && (
+                              <div className="flex items-center">
+                                <div className="w-4 h-4 bg-green-500 rounded-md mr-2"></div>
+                                <div className="text-sm">
+                                  <div className="font-medium">3개월~1년</div>
+                                  <div className="text-gray-600">{dateData.oneYear}개 ({oneYearPercent}%)</div>
+                                </div>
+                              </div>
+                            )}
+                            {dateData.twoYears > 0 && (
+                              <div className="flex items-center">
+                                <div className="w-4 h-4 bg-yellow-500 rounded-md mr-2"></div>
+                                <div className="text-sm">
+                                  <div className="font-medium">1년~2년</div>
+                                  <div className="text-gray-600">{dateData.twoYears}개 ({twoYearsPercent}%)</div>
+                                </div>
+                              </div>
+                            )}
+                            {dateData.older > 0 && (
+                              <div className="flex items-center">
+                                <div className="w-4 h-4 bg-red-500 rounded-md mr-2"></div>
+                                <div className="text-sm">
+                                  <div className="font-medium">2년 이상 전</div>
+                                  <div className="text-gray-600">{dateData.older}개 ({olderPercent}%)</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* 개별 콘텐츠 분석 결과 */}
+              {getChannelResult(activeTab)?.contentItems && getChannelResult(activeTab)!.contentItems!.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="font-semibold text-gray-800 mb-4">개별 콘텐츠 분석 결과</h3>
+                  <div className="space-y-4">
+                    {getChannelResult(activeTab)!.contentItems!.map((item, idx) => {
+                      let sentimentColor = 'bg-gray-400';
+                      let sentimentLabel = '중립';
+                      if (item.sentiment === 'positive') {
+                        sentimentColor = 'bg-green-400';
+                        sentimentLabel = '긍정';
+                      } else if (item.sentiment === 'negative') {
+                        sentimentColor = 'bg-red-400';
+                        sentimentLabel = '부정';
+                      }
+
+                      let formattedDate = '';
+                      if (item.publishedAt) {
+                        try {
+                          const date = new Date(item.publishedAt);
+                          if (!isNaN(date.getTime())) {
+                            formattedDate = date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+                          }
+                        } catch (e) { /* ignore */ }
+                      }
+
+                      return (
+                        <div key={idx} className="bg-white rounded-lg border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all">
+                          <div className="p-4">
+                            <div className="flex justify-between items-start mb-3">
+                              <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-medium hover:underline">
+                                {item.title.replace(/<[^>]*>/g, '')}
+                              </a>
+                              <span className={`${sentimentColor} text-white px-2 py-1 rounded-md text-xs font-medium flex-shrink-0 ml-2`}>
+                                {sentimentLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{item.description.replace(/<[^>]*>/g, '')}</p>
+                            <div className="flex justify-between items-center text-xs text-gray-500">
+                              {formattedDate && (
+                                <div className="flex items-center">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span>{formattedDate}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>감정 점수: {(item.score ? item.score * 10 : 5).toFixed(1)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1371,58 +1712,231 @@ const Step3BrandComparison: React.FC<Step3BrandProps> = ({
             </nav>
           </div>
 
-          {/* 채널별 브랜드 비교 */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-800 mb-4">{channelNames[activeTab]} 채널 브랜드 비교</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">브랜드</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">긍정</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">중립</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">부정</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">주요 키워드</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {allBrands.map((brand) => {
-                    const sentiment = getSentimentScore(brand.contentAnalysis, activeTab);
-                    const keywords = brand.contentAnalysis?.[activeTab]?.keywords?.slice(0, 5) || [];
+          {/* 섹션 1: 주요 키워드 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-4">주요 키워드 비교</h3>
+            <div className={`grid grid-cols-1 ${allBrands.length === 2 ? 'md:grid-cols-2' : allBrands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
+              {allBrands.map((brand) => {
+                const keywords = brand.contentAnalysis?.[activeTab]?.keywords?.slice(0, 10) || [];
+                const maxFreq = keywords.length > 0 ? keywords[0].frequency : 1;
 
-                    return (
-                      <tr key={brand.brandKeyword} className={brand.isOwnBrand ? 'bg-blue-50' : 'hover:bg-gray-50'}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {brand.isOwnBrand && <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded">자사</span>}
-                            <span className="text-sm font-medium text-gray-800">{brand.brandKeyword}</span>
+                return (
+                  <div key={brand.brandKeyword} className={`rounded-lg p-4 ${brand.isOwnBrand ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      {brand.isOwnBrand && <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded">자사</span>}
+                      <span className={`text-sm font-semibold ${brand.isOwnBrand ? 'text-blue-700' : 'text-gray-700'}`}>{brand.brandKeyword}</span>
+                    </div>
+                    {keywords.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {keywords.map((kw, idx) => (
+                          <div key={idx} className="flex items-center">
+                            <span className="w-20 text-xs text-gray-700 truncate">{kw.keyword}</span>
+                            <div className="flex-1 mx-2 bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-500 h-2 rounded-full"
+                                style={{ width: `${(kw.frequency / maxFreq) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500 w-8 text-right">{kw.frequency}</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-sm font-semibold text-green-600">{sentiment?.positive || 0}%</span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-sm font-semibold text-gray-500">{sentiment?.neutral || 0}%</span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-sm font-semibold text-red-600">{sentiment?.negative || 0}%</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {keywords.length > 0 ? keywords.map((kw, idx) => (
-                              <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
-                                {kw.keyword}
-                              </span>
-                            )) : (
-                              <span className="text-xs text-gray-400">데이터 없음</span>
-                            )}
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-4">데이터 없음</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 섹션 2: 감성 분석 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-4">감성 분석 비교</h3>
+            <div className="space-y-4">
+              {allBrands.map((brand) => {
+                const sentiment = getSentimentScore(brand.contentAnalysis, activeTab);
+                const pos = sentiment?.positive || 0;
+                const neu = sentiment?.neutral || 0;
+                const neg = sentiment?.negative || 0;
+
+                return (
+                  <div key={brand.brandKeyword} className="flex items-center gap-4">
+                    <div className="w-28 flex items-center gap-2 flex-shrink-0">
+                      {brand.isOwnBrand && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>}
+                      <span className={`text-sm font-medium truncate ${brand.isOwnBrand ? 'text-blue-700' : 'text-gray-700'}`}>
+                        {brand.brandKeyword}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      {sentiment ? (
+                        <div className="flex h-6 rounded-full overflow-hidden bg-gray-100">
+                          <div className="bg-green-500 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${pos}%` }}>
+                            {pos > 10 && `${pos}%`}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <div className="bg-gray-400 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${neu}%` }}>
+                            {neu > 10 && `${neu}%`}
+                          </div>
+                          <div className="bg-red-500 flex items-center justify-center text-xs text-white font-medium" style={{ width: `${neg}%` }}>
+                            {neg > 10 && `${neg}%`}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-6 bg-gray-100 rounded-full flex items-center justify-center">
+                          <span className="text-xs text-gray-400">데이터 없음</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="w-36 text-xs text-gray-500 text-right flex-shrink-0">
+                      긍정 {pos}% / 부정 {neg}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-center gap-6 mt-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span> 긍정</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-400 rounded"></span> 중립</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span> 부정</span>
+            </div>
+          </div>
+
+          {/* 섹션 3: 긍부정 평가 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-4">긍부정 평가 비교</h3>
+            <div className={`grid grid-cols-1 ${allBrands.length === 2 ? 'md:grid-cols-2' : allBrands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
+              {allBrands.map((brand) => {
+                const items = brand.contentAnalysis?.[activeTab]?.contentItems || [];
+                const total = items.length;
+                const pos = items.filter(i => i.sentiment === 'positive').length;
+                const neg = items.filter(i => i.sentiment === 'negative').length;
+                const neu = items.filter(i => i.sentiment === 'neutral').length;
+                const posPercent = total > 0 ? Math.round((pos / total) * 100) : 0;
+                const negPercent = total > 0 ? Math.round((neg / total) * 100) : 0;
+                const neuPercent = total > 0 ? 100 - posPercent - negPercent : 0;
+
+                return (
+                  <div key={brand.brandKeyword} className={`rounded-lg p-4 ${brand.isOwnBrand ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      {brand.isOwnBrand && <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded">자사</span>}
+                      <span className={`text-sm font-semibold ${brand.isOwnBrand ? 'text-blue-700' : 'text-gray-700'}`}>{brand.brandKeyword}</span>
+                    </div>
+                    {total > 0 ? (
+                      <div>
+                        <div className="flex justify-center mb-3">
+                          <DonutChart positive={pos} negative={neg} neutral={neu} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-green-50 p-2 rounded-lg">
+                            <div className="text-lg font-bold text-green-600">{pos}</div>
+                            <div className="text-xs text-gray-600">긍정</div>
+                            <div className="text-xs font-medium text-green-600">{posPercent}%</div>
+                          </div>
+                          <div className="bg-gray-100 p-2 rounded-lg">
+                            <div className="text-lg font-bold text-gray-600">{neu}</div>
+                            <div className="text-xs text-gray-600">중립</div>
+                            <div className="text-xs font-medium text-gray-600">{neuPercent}%</div>
+                          </div>
+                          <div className="bg-red-50 p-2 rounded-lg">
+                            <div className="text-lg font-bold text-red-600">{neg}</div>
+                            <div className="text-xs text-gray-600">부정</div>
+                            <div className="text-xs font-medium text-red-600">{negPercent}%</div>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-2">
+                          총 {total}개 콘텐츠
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-4">데이터 없음</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 섹션 4: 작성일 기준 분석 비교 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-800 mb-4">작성일 기준 분석 비교</h3>
+            <div className={`grid grid-cols-1 ${allBrands.length === 2 ? 'md:grid-cols-2' : allBrands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
+              {allBrands.map((brand) => {
+                const items = brand.contentAnalysis?.[activeTab]?.contentItems || [];
+                const dateData = getDateAnalysisChartData(items);
+                const total = dateData.threeMonths + dateData.oneYear + dateData.twoYears + dateData.older;
+                const threeMonthsPercent = total > 0 ? Math.round((dateData.threeMonths / total) * 100) : 0;
+                const oneYearPercent = total > 0 ? Math.round((dateData.oneYear / total) * 100) : 0;
+                const twoYearsPercent = total > 0 ? Math.round((dateData.twoYears / total) * 100) : 0;
+                const olderPercent = total > 0 ? Math.round((dateData.older / total) * 100) : 0;
+
+                return (
+                  <div key={brand.brandKeyword} className={`rounded-lg p-4 ${brand.isOwnBrand ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      {brand.isOwnBrand && <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded">자사</span>}
+                      <span className={`text-sm font-semibold ${brand.isOwnBrand ? 'text-blue-700' : 'text-gray-700'}`}>{brand.brandKeyword}</span>
+                    </div>
+                    {total > 0 ? (
+                      <div>
+                        {/* Stacked bar */}
+                        <div className="w-full bg-gray-200 rounded-full h-5 mb-3 overflow-hidden flex">
+                          {dateData.threeMonths > 0 && (
+                            <div className="bg-blue-500 h-5 text-xs font-medium text-blue-100 text-center leading-5" style={{ width: `${threeMonthsPercent}%` }}>
+                              {threeMonthsPercent > 8 && `${threeMonthsPercent}%`}
+                            </div>
+                          )}
+                          {dateData.oneYear > 0 && (
+                            <div className="bg-green-500 h-5 text-xs font-medium text-green-100 text-center leading-5" style={{ width: `${oneYearPercent}%` }}>
+                              {oneYearPercent > 8 && `${oneYearPercent}%`}
+                            </div>
+                          )}
+                          {dateData.twoYears > 0 && (
+                            <div className="bg-yellow-500 h-5 text-xs font-medium text-yellow-100 text-center leading-5" style={{ width: `${twoYearsPercent}%` }}>
+                              {twoYearsPercent > 8 && `${twoYearsPercent}%`}
+                            </div>
+                          )}
+                          {dateData.older > 0 && (
+                            <div className="bg-red-500 h-5 text-xs font-medium text-red-100 text-center leading-5" style={{ width: `${olderPercent}%` }}>
+                              {olderPercent > 8 && `${olderPercent}%`}
+                            </div>
+                          )}
+                        </div>
+                        {/* 범례 */}
+                        <div className="grid grid-cols-2 gap-1 text-xs">
+                          {dateData.threeMonths > 0 && (
+                            <div className="flex items-center">
+                              <div className="w-3 h-3 bg-blue-500 rounded mr-1"></div>
+                              <span>3개월 {dateData.threeMonths}개</span>
+                            </div>
+                          )}
+                          {dateData.oneYear > 0 && (
+                            <div className="flex items-center">
+                              <div className="w-3 h-3 bg-green-500 rounded mr-1"></div>
+                              <span>~1년 {dateData.oneYear}개</span>
+                            </div>
+                          )}
+                          {dateData.twoYears > 0 && (
+                            <div className="flex items-center">
+                              <div className="w-3 h-3 bg-yellow-500 rounded mr-1"></div>
+                              <span>~2년 {dateData.twoYears}개</span>
+                            </div>
+                          )}
+                          {dateData.older > 0 && (
+                            <div className="flex items-center">
+                              <div className="w-3 h-3 bg-red-500 rounded mr-1"></div>
+                              <span>2년+ {dateData.older}개</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-2">
+                          총 {total}개 (날짜 있는 콘텐츠)
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-4">작성일 데이터 없음</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
