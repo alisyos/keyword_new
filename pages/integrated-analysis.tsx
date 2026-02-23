@@ -11,6 +11,7 @@ import {
   AdAnalysisResult,
   ShoppingSearchAnalysisResult,
   BrandComparisonResult,
+  BrandKeywordFilter,
   ContentType,
   WizardStep,
   KeywordType,
@@ -669,12 +670,25 @@ const Step2KeywordExpansion: React.FC<Step2Props> = ({
   );
 };
 
+// ===== 브랜드 키워드 필터 유틸리티 =====
+const applyBrandKeywordFilter = (
+  keywordList: KeywordExpansionData[],
+  filter: BrandKeywordFilter | undefined
+): KeywordExpansionData[] => {
+  if (!filter || !filter.isEnabled || !filter.filterText.trim()) return keywordList;
+  const filterLower = filter.filterText.trim().toLowerCase();
+  return keywordList.filter(kw => kw.relKeyword.toLowerCase().includes(filterLower));
+};
+
 // ===== Step 2: 브랜드별 키워드 확장 (브랜드 유형용) =====
 interface Step2BrandProps {
   ownBrand: string;
   competitorBrands: string[];
   brandComparison: BrandComparisonResult | null;
   loading: boolean;
+  brandKeywordFilters: BrandKeywordFilter[];
+  onFilterChange: (brand: string, text: string) => void;
+  onFilterToggle: (brand: string, enabled: boolean) => void;
   onAnalyze: () => void;
   onReanalyze: () => void;
   onPrev: () => void;
@@ -686,6 +700,9 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
   competitorBrands,
   brandComparison,
   loading,
+  brandKeywordFilters,
+  onFilterChange,
+  onFilterToggle,
   onAnalyze,
   onReanalyze,
   onPrev,
@@ -704,9 +721,17 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
     return brandComparison.competitors.find(c => c.brandKeyword === brandKeyword);
   };
 
-  const calculateTotalVolume = (data: KeywordExpansionResult | null) => {
-    if (!data?.keywordList) return 0;
-    return data.keywordList.reduce((sum, kw) => {
+  const getFilterForBrand = (brandKeyword: string) =>
+    brandKeywordFilters.find(f => f.brandKeyword === brandKeyword);
+
+  const getFilteredKeywordList = (brandKeyword: string) => {
+    const data = getBrandData(brandKeyword);
+    if (!data?.keywordExpansion?.keywordList) return [];
+    return applyBrandKeywordFilter(data.keywordExpansion.keywordList, getFilterForBrand(brandKeyword));
+  };
+
+  const calculateTotalVolume = (keywordList: KeywordExpansionData[]) => {
+    return keywordList.reduce((sum, kw) => {
       const pc = kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0;
       const mobile = kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0;
       return sum + pc + mobile;
@@ -758,13 +783,65 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
             </button>
           </div>
 
+          {/* 브랜드 키워드 필터 컨트롤 */}
+          {brandKeywordFilters.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                <h3 className="text-sm font-semibold text-gray-700">브랜드 키워드 필터</h3>
+                <span className="text-xs text-gray-400 ml-1">브랜드명을 포함하는 키워드만 표시합니다</span>
+              </div>
+              <div className="space-y-2">
+                {brandKeywordFilters.map((filter, idx) => {
+                  const totalCount = getBrandData(filter.brandKeyword)?.keywordExpansion?.keywordList?.length || 0;
+                  const filteredCount = getFilteredKeywordList(filter.brandKeyword).length;
+                  const isOwn = idx === 0;
+                  return (
+                    <div key={filter.brandKeyword} className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filter.isEnabled}
+                          onChange={(e) => onFilterToggle(filter.brandKeyword, e.target.checked)}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className={`text-sm font-medium min-w-[60px] ${isOwn ? 'text-blue-600' : 'text-gray-700'}`}>
+                          {isOwn ? '자사' : `경쟁${idx}`}:
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={filter.filterText}
+                        onChange={(e) => onFilterChange(filter.brandKeyword, e.target.value)}
+                        disabled={!filter.isEnabled}
+                        className={`flex-1 max-w-[200px] px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                          filter.isEnabled ? 'bg-white border-gray-300' : 'bg-gray-100 border-gray-200 text-gray-400'
+                        }`}
+                        placeholder="필터 텍스트"
+                      />
+                      <span className="text-xs text-gray-500 min-w-[80px]">
+                        {filter.isEnabled ? (
+                          <><span className="font-semibold text-blue-600">{filteredCount}</span> / {totalCount}개</>
+                        ) : (
+                          <><span className="font-semibold">{totalCount}</span>개 (전체)</>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 브랜드 비교 요약 카드 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {allBrands.map((brand, idx) => {
-              const data = getBrandData(brand);
               const isOwn = idx === 0;
-              const totalVolume = calculateTotalVolume(data?.keywordExpansion || null);
-              const keywordCount = data?.keywordExpansion?.keywordList?.length || 0;
+              const filteredList = getFilteredKeywordList(brand);
+              const totalVolume = calculateTotalVolume(filteredList);
+              const keywordCount = filteredList.length;
 
               return (
                 <div
@@ -806,7 +883,7 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
                     </div>
                   </div>
 
-                  {!data?.keywordExpansion && (
+                  {!getBrandData(brand)?.keywordExpansion && (
                     <div className="mt-3 text-center text-sm text-red-500">분석 실패</div>
                   )}
                 </div>
@@ -818,9 +895,14 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
           {expandedBrand && (
             <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
               <h3 className="font-semibold text-gray-800 mb-4">
-                "{expandedBrand}" 상위 연관 키워드
+                "{expandedBrand}" 연관 키워드
+                {getFilterForBrand(expandedBrand)?.isEnabled && (
+                  <span className="text-sm font-normal text-gray-500 ml-2">
+                    (필터 적용: "{getFilterForBrand(expandedBrand)?.filterText}" 포함)
+                  </span>
+                )}
               </h3>
-              {getBrandData(expandedBrand)?.keywordExpansion?.keywordList ? (
+              {getFilteredKeywordList(expandedBrand).length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full">
                     <thead className="bg-gray-50">
@@ -832,7 +914,7 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {getBrandData(expandedBrand)!.keywordExpansion!.keywordList.slice(0, 15).map((kw, idx) => (
+                      {getFilteredKeywordList(expandedBrand).slice(0, 30).map((kw, idx) => (
                         <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-sm text-gray-800">{kw.relKeyword}</td>
                           <td className="px-4 py-2 text-sm text-right text-gray-600">
@@ -856,19 +938,28 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
                   </table>
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-4">키워드 데이터가 없습니다.</p>
+                <p className="text-gray-500 text-center py-4">
+                  {getFilterForBrand(expandedBrand)?.isEnabled
+                    ? `"${getFilterForBrand(expandedBrand)?.filterText}" 포함 키워드가 없습니다. 필터를 해제하거나 텍스트를 수정해보세요.`
+                    : '키워드 데이터가 없습니다.'}
+                </p>
               )}
             </div>
           )}
 
           {/* 브랜드 검색량 비교 차트 */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-800 mb-4">브랜드별 총 검색량 비교</h3>
+            <h3 className="font-semibold text-gray-800 mb-4">
+              브랜드별 총 검색량 비교
+              {brandKeywordFilters.some(f => f.isEnabled) && (
+                <span className="text-sm font-normal text-gray-500 ml-2">(필터 적용)</span>
+              )}
+            </h3>
             <div className="space-y-3">
               {allBrands.map((brand, idx) => {
-                const data = getBrandData(brand);
-                const totalVolume = calculateTotalVolume(data?.keywordExpansion || null);
-                const maxVolume = Math.max(...allBrands.map(b => calculateTotalVolume(getBrandData(b)?.keywordExpansion || null)));
+                const filteredList = getFilteredKeywordList(brand);
+                const totalVolume = calculateTotalVolume(filteredList);
+                const maxVolume = Math.max(...allBrands.map(b => calculateTotalVolume(getFilteredKeywordList(b))));
                 const percentage = maxVolume > 0 ? (totalVolume / maxVolume) * 100 : 0;
                 const isOwn = idx === 0;
 
@@ -2989,6 +3080,7 @@ export default function IntegratedAnalysisPage() {
         keywordExpansion: null,
         keywordExpansionGPTAnalysis: null,
         brandComparison: null,
+        brandKeywordFilters: [],
       });
     }
     if (fromStep <= 3) {
@@ -3207,24 +3299,87 @@ export default function IntegratedAnalysisPage() {
       const ownBrandData = results[0];
       const competitorData = results.slice(1);
 
-      // 자사 브랜드 키워드 확장 결과를 기본 keywordExpansion에도 저장 (리포트 생성용)
+      // 브랜드별 필터 초기화 (기본: 브랜드명 포함 필터 활성화)
+      const brandFilters: BrandKeywordFilter[] = allBrands.map(brand => ({
+        brandKeyword: brand,
+        filterText: brand,
+        isEnabled: true,
+      }));
+
+      // 자사 브랜드 필터 적용된 keywordExpansion 저장 (리포트 생성용)
+      const ownFilter = brandFilters[0];
+      const filteredOwnExpansion = ownBrandData.keywordExpansion
+        ? {
+            ...ownBrandData.keywordExpansion,
+            keywordList: applyBrandKeywordFilter(ownBrandData.keywordExpansion.keywordList, ownFilter),
+          }
+        : null;
+
       updateState({
         brandComparison: {
           ownBrand: ownBrandData,
           competitors: competitorData,
         },
-        keywordExpansion: ownBrandData.keywordExpansion,
+        keywordExpansion: filteredOwnExpansion,
+        brandKeywordFilters: brandFilters,
         brandComparisonLoading: false,
       });
 
-      // GPT 분석도 자동 호출 (자사 브랜드 기준)
-      if (ownBrandData.keywordExpansion) {
-        await handleKeywordExpansionGPTAnalysis(ownBrandData.keywordExpansion);
+      // GPT 분석도 자동 호출 (자사 브랜드 필터 적용 기준)
+      if (filteredOwnExpansion) {
+        await handleKeywordExpansionGPTAnalysis(filteredOwnExpansion);
       }
     } catch (err) {
       console.error('브랜드 키워드 확장 오류:', err);
       setError('브랜드 키워드 확장 분석 중 오류가 발생했습니다.');
       updateState({ brandComparisonLoading: false });
+    }
+  };
+
+  // 브랜드 키워드 필터 텍스트 변경
+  const filterDebounceRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleBrandFilterChange = (brandKeyword: string, filterText: string) => {
+    const newFilters = analysisState.brandKeywordFilters.map(f =>
+      f.brandKeyword === brandKeyword ? { ...f, filterText } : f
+    );
+    updateState({ brandKeywordFilters: newFilters });
+
+    // 자사 브랜드 필터 변경 시 keywordExpansion 동기화 (디바운스 500ms)
+    if (brandKeyword === analysisState.keyword && analysisState.brandComparison?.ownBrand.keywordExpansion) {
+      if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
+      filterDebounceRef.current = setTimeout(() => {
+        const updatedFilter: BrandKeywordFilter = { brandKeyword, filterText, isEnabled: true };
+        const ownExpansion = analysisState.brandComparison?.ownBrand.keywordExpansion;
+        if (ownExpansion) {
+          updateState({
+            keywordExpansion: {
+              ...ownExpansion,
+              keywordList: applyBrandKeywordFilter(ownExpansion.keywordList, updatedFilter),
+            },
+          });
+        }
+      }, 500);
+    }
+  };
+
+  // 브랜드 키워드 필터 on/off 토글
+  const handleBrandFilterToggle = (brandKeyword: string, isEnabled: boolean) => {
+    const newFilters = analysisState.brandKeywordFilters.map(f =>
+      f.brandKeyword === brandKeyword ? { ...f, isEnabled } : f
+    );
+    updateState({ brandKeywordFilters: newFilters });
+
+    // 자사 브랜드 필터 토글 시 keywordExpansion 동기화
+    if (brandKeyword === analysisState.keyword && analysisState.brandComparison?.ownBrand.keywordExpansion) {
+      const filter = newFilters.find(f => f.brandKeyword === brandKeyword);
+      const ownExpansion = analysisState.brandComparison.ownBrand.keywordExpansion;
+      updateState({
+        keywordExpansion: {
+          ...ownExpansion,
+          keywordList: applyBrandKeywordFilter(ownExpansion.keywordList, filter),
+        },
+      });
     }
   };
 
@@ -3347,11 +3502,17 @@ export default function IntegratedAnalysisPage() {
   // 브랜드 비교 데이터 요약
   const summarizeBrandComparison = (comparison: typeof analysisState.brandComparison) => {
     if (!comparison) return undefined;
+
+    const getFilteredList = (brandKeyword: string, keywordList: KeywordExpansionData[]) => {
+      const filter = analysisState.brandKeywordFilters.find(f => f.brandKeyword === brandKeyword);
+      return applyBrandKeywordFilter(keywordList, filter).slice(0, 20);
+    };
+
     return {
       ownBrand: {
         brandKeyword: comparison.ownBrand.brandKeyword,
         keywordExpansion: comparison.ownBrand.keywordExpansion
-          ? { keywordList: comparison.ownBrand.keywordExpansion.keywordList?.slice(0, 20) || [] }
+          ? { keywordList: getFilteredList(comparison.ownBrand.brandKeyword, comparison.ownBrand.keywordExpansion.keywordList || []) }
           : null,
         contentAnalysis: {
           blog: summarizeContentAnalysis(comparison.ownBrand.contentAnalysis?.blog || null),
@@ -3363,7 +3524,7 @@ export default function IntegratedAnalysisPage() {
       competitors: comparison.competitors.map((comp) => ({
         brandKeyword: comp.brandKeyword,
         keywordExpansion: comp.keywordExpansion
-          ? { keywordList: comp.keywordExpansion.keywordList?.slice(0, 20) || [] }
+          ? { keywordList: getFilteredList(comp.brandKeyword, comp.keywordExpansion.keywordList || []) }
           : null,
         contentAnalysis: {
           blog: summarizeContentAnalysis(comp.contentAnalysis?.blog || null),
@@ -3608,6 +3769,9 @@ export default function IntegratedAnalysisPage() {
                 competitorBrands={analysisState.competitorBrands}
                 brandComparison={analysisState.brandComparison}
                 loading={analysisState.brandComparisonLoading}
+                brandKeywordFilters={analysisState.brandKeywordFilters}
+                onFilterChange={handleBrandFilterChange}
+                onFilterToggle={handleBrandFilterToggle}
                 onAnalyze={handleBrandKeywordExpansion}
                 onReanalyze={handleReanalyzeStep2Brand}
                 onPrev={() => goToStep(1)}

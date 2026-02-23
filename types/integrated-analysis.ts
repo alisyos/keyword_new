@@ -117,6 +117,13 @@ export interface BrandComparisonResult {
   competitors: BrandComparisonData[];
 }
 
+// 브랜드 키워드 필터
+export interface BrandKeywordFilter {
+  brandKeyword: string;    // 브랜드명
+  filterText: string;      // 필터 텍스트 (기본값: 브랜드명)
+  isEnabled: boolean;      // 필터 활성화 여부 (기본: true)
+}
+
 // ===== 통합 분석 전용 타입 =====
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
@@ -327,6 +334,7 @@ export interface IntegratedAnalysisState {
   // 브랜드 비교 (브랜드 유형용)
   brandComparison: BrandComparisonResult | null;
   brandComparisonLoading: boolean;
+  brandKeywordFilters: BrandKeywordFilter[];
 
   // 종합 리포트
   integratedReport: IntegratedReportData | null;
@@ -385,6 +393,7 @@ export const initialAnalysisState: IntegratedAnalysisState = {
   coupangShoppingText: '',
   brandComparison: null,
   brandComparisonLoading: false,
+  brandKeywordFilters: [],
   integratedReport: null,
   reportLoading: false,
 };
