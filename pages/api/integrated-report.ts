@@ -8,6 +8,7 @@ import {
   KeywordAnalysisResult,
   AdAnalysisResult,
   ShoppingSearchAnalysisResult,
+  ShoppingPlatformData,
   BrandComparisonResult,
   ContentType,
   KeywordType,
@@ -221,19 +222,48 @@ function buildDataSummary(
       ? '네이버 쇼핑 + 쿠팡'
       : shoppingAnalysis.sources?.includes('coupang') ? '쿠팡' : '네이버 쇼핑';
     summary += `\n## 쇼핑 검색 분석 데이터 (소스: ${sourceLabel})\n\n`;
-    summary += `### 가격대 분석\n${shoppingAnalysis.gptAnalysis.priceAnalysis}\n\n`;
-    summary += `### 주요 브랜드/판매처\n${shoppingAnalysis.gptAnalysis.topBrands}\n\n`;
-    summary += `### 상품 특성\n${shoppingAnalysis.gptAnalysis.productFeatures}\n\n`;
-    summary += `### 소비자 구매 결정 요인\n${shoppingAnalysis.gptAnalysis.purchaseFactors}\n\n`;
-    summary += `### 시장 포지셔닝 전략\n${shoppingAnalysis.gptAnalysis.marketPositioning}\n\n`;
-    if (shoppingAnalysis.gptAnalysis.platformComparison) {
-      summary += `### 네이버 vs 쿠팡 플랫폼 비교\n${shoppingAnalysis.gptAnalysis.platformComparison}\n\n`;
-    }
-    if (shoppingAnalysis.gptAnalysis.recommendations?.length > 0) {
-      summary += `### 마케팅 추천 사항\n`;
-      shoppingAnalysis.gptAnalysis.recommendations.forEach((rec, idx) => {
-        summary += `${idx + 1}. ${rec}\n`;
+
+    const renderPlatformSummary = (data: ShoppingPlatformData, label: string) => {
+      let s = `### ${label} 전체 분석\n`;
+      s += `- 총 상품 수: ${data.overall.totalProducts}개\n`;
+      s += `- 평균 가격: ${data.overall.averagePrice.toLocaleString()}원\n`;
+      s += `- 총 리뷰 수: ${data.overall.totalReviews.toLocaleString()}개\n`;
+      s += `- 평균 평점: ${data.overall.averageRating.toFixed(1)}\n`;
+      s += `- 총 매출액(추정): ${data.overall.estimatedRevenue.toLocaleString()}원\n`;
+      if (data.overall.insight) s += `- 인사이트: ${data.overall.insight}\n`;
+
+      s += `\n### ${label} TOP 판매자\n`;
+      data.sellers.topSellers.forEach((seller) => {
+        s += `${seller.rank}. ${seller.seller} - ${seller.productName} (가격: ${seller.price.toLocaleString()}원, 리뷰: ${seller.reviews}, 평점: ${seller.rating.toFixed(1)}, 매출 추정: ${seller.estimatedRevenue.toLocaleString()}원)\n`;
       });
+      if (data.sellers.insight) s += `- 인사이트: ${data.sellers.insight}\n`;
+
+      s += `\n### ${label} 가격대 분석\n`;
+      data.priceRanges.priceRanges.forEach((pr) => {
+        s += `- ${pr.range}: 상품 ${pr.productCount}개, 평균가 ${pr.averagePrice.toLocaleString()}원, 리뷰 ${pr.totalReviews}, 평점 ${pr.averageRating.toFixed(1)}, 매출 추정 ${pr.estimatedRevenue.toLocaleString()}원\n`;
+      });
+      if (data.priceRanges.insight) s += `- 인사이트: ${data.priceRanges.insight}\n`;
+
+      return s;
+    };
+
+    const gpt = shoppingAnalysis.gptAnalysis;
+    const isDual = shoppingAnalysis.sources.length === 2;
+
+    if (isDual && gpt.naver && gpt.coupang) {
+      summary += renderPlatformSummary(gpt.naver, '네이버 쇼핑');
+      summary += '\n';
+      summary += renderPlatformSummary(gpt.coupang, '쿠팡');
+    } else if (gpt.combined) {
+      summary += renderPlatformSummary(gpt.combined, sourceLabel);
+    }
+
+    summary += `\n### 전략\n`;
+    if (gpt.strategy.marketPositioning) {
+      summary += `- 시장 포지셔닝: ${gpt.strategy.marketPositioning}\n`;
+    }
+    if (gpt.strategy.marketingStrategy) {
+      summary += `- 마케팅 전략: ${gpt.strategy.marketingStrategy}\n`;
     }
   }
 

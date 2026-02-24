@@ -1,6 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { OpenAI } from 'openai';
-import { ShoppingSearchAnalysisResult } from '../../types/integrated-analysis';
+import {
+  ShoppingSearchAnalysisResult,
+  ShoppingPlatformData,
+  ShoppingAnalysisData,
+  ShoppingSellerRankItem,
+  ShoppingPriceRangeItem,
+} from '../../types/integrated-analysis';
 
 // OpenAI 클라이언트 생성
 const openai = new OpenAI({
@@ -43,6 +49,47 @@ export default async function handler(
   }
 }
 
+// 플랫폼 데이터 유효성 검증 및 기본값 적용
+function validatePlatformData(raw: any): ShoppingPlatformData {
+  const overall = raw?.overall || {};
+  const sellers = raw?.sellers || {};
+  const priceRanges = raw?.priceRanges || {};
+
+  return {
+    overall: {
+      totalProducts: Number(overall.totalProducts) || 0,
+      averagePrice: Number(overall.averagePrice) || 0,
+      totalReviews: Number(overall.totalReviews) || 0,
+      averageRating: Number(overall.averageRating) || 0,
+      estimatedRevenue: Number(overall.estimatedRevenue) || 0,
+      insight: overall.insight || '',
+    },
+    sellers: {
+      topSellers: (sellers.topSellers || []).map((s: any, idx: number): ShoppingSellerRankItem => ({
+        rank: idx + 1,
+        seller: s.seller || '',
+        productName: s.productName || '',
+        price: Number(s.price) || 0,
+        reviews: Number(s.reviews) || 0,
+        rating: Number(s.rating) || 0,
+        estimatedRevenue: Number(s.estimatedRevenue) || 0,
+      })),
+      insight: sellers.insight || '',
+    },
+    priceRanges: {
+      priceRanges: (priceRanges.priceRanges || []).map((p: any): ShoppingPriceRangeItem => ({
+        range: p.range || '',
+        productCount: Number(p.productCount) || 0,
+        averagePrice: Number(p.averagePrice) || 0,
+        totalReviews: Number(p.totalReviews) || 0,
+        averageRating: Number(p.averageRating) || 0,
+        estimatedRevenue: Number(p.estimatedRevenue) || 0,
+      })),
+      insight: priceRanges.insight || '',
+    },
+  };
+}
+
 async function analyzeShoppingSearch(
   keyword: string,
   naverText?: string,
@@ -57,22 +104,73 @@ async function analyzeShoppingSearch(
     ? '네이버 쇼핑과 쿠팡'
     : naverText ? '네이버 쇼핑' : '쿠팡';
 
-  const comparisonInstruction = hasBoth
-    ? `\n  "platformComparison": "네이버 쇼핑과 쿠팡 플랫폼 간 가격, 브랜드, 배송, 리뷰 등의 차이점 비교 분석"`
-    : '';
+  // 플랫폼 데이터 스키마 (재사용)
+  const platformSchema = `{
+      "overall": {
+        "totalProducts": 숫자(총 상품 수),
+        "averagePrice": 숫자(원 단위 평균 가격),
+        "totalReviews": 숫자(총 리뷰 수),
+        "averageRating": 숫자(소수점 평점, 예: 4.5),
+        "estimatedRevenue": 숫자(원 단위 추정 총 매출액 = 평균가격 × 총리뷰수 근사),
+        "insight": "핵심 인사이트 1~2문장"
+      },
+      "sellers": {
+        "topSellers": [
+          {
+            "seller": "판매자명",
+            "productName": "대표 상품명",
+            "price": 숫자(원 단위),
+            "reviews": 숫자(리뷰 수),
+            "rating": 숫자(소수점 평점),
+            "estimatedRevenue": 숫자(원 단위 추정 매출 = 가격 × 리뷰수)
+          }
+        ],
+        "insight": "판매자 분석 인사이트 1~2문장"
+      },
+      "priceRanges": {
+        "priceRanges": [
+          {
+            "range": "가격대 구간 (예: 1~3만원)",
+            "productCount": 숫자,
+            "averagePrice": 숫자(원 단위),
+            "totalReviews": 숫자,
+            "averageRating": 숫자(소수점),
+            "estimatedRevenue": 숫자(원 단위)
+          }
+        ],
+        "insight": "가격대 분석 인사이트 1~2문장"
+      }
+    }`;
 
-  const systemPrompt = `당신은 이커머스 마케팅 전문가입니다. ${platformLabel} 검색 결과 데이터를 분석하여 시장 인사이트를 도출해주세요.
-${hasBoth ? '\n두 플랫폼의 데이터가 모두 제공되었으므로, 각 플랫폼의 특성을 비교하여 플랫폼별 전략 차이도 분석해주세요.' : ''}
+  const responseStructure = hasBoth
+    ? `{
+  "naver": ${platformSchema},
+  "coupang": ${platformSchema},
+  "strategy": {
+    "marketPositioning": "네이버/쿠팡 매체별 시장 포지셔닝 전략 (3~5문장)",
+    "marketingStrategy": "종합 마케팅 전략 (3~5문장)"
+  }
+}`
+    : `{
+  "combined": ${platformSchema},
+  "strategy": {
+    "marketPositioning": "매체별 시장 포지셔닝 전략 (3~5문장)",
+    "marketingStrategy": "종합 마케팅 전략 (3~5문장)"
+  }
+}`;
+
+  const systemPrompt = `당신은 이커머스 데이터 분석가입니다. ${platformLabel} 검색 결과 데이터를 분석하여 구조화된 수치 기반 인사이트를 도출해주세요.
+${hasBoth ? '\n두 플랫폼의 데이터가 모두 제공되었으므로, 각 플랫폼을 개별 분석하고 전략에서 비교 관점을 포함해주세요.' : ''}
+
+### 수치 규칙
+- 모든 가격/매출은 숫자(원 단위)로 반환 (예: 29900, 1500000)
+- 평점은 소수점 1자리 (예: 4.3)
+- 추정 매출 = 가격 × 리뷰 수 근사치
+- topSellers는 상위 5개 판매자 (데이터가 부족하면 가능한 만큼)
+- priceRanges는 3~6개 구간으로 분류
 
 분석 결과는 반드시 다음 JSON 형식으로 반환해주세요:
-{
-  "priceAnalysis": "가격대 분석 (최저가, 최고가, 평균가 범위, 가격 분포 특성)",
-  "topBrands": "주요 브랜드/판매처 분석 (상위 노출 브랜드, 시장 점유 추정)",
-  "productFeatures": "상품 특성 및 차별화 포인트 (주요 제품 유형, 스펙, 특징)",
-  "purchaseFactors": "소비자 구매 결정 요인 분석 (리뷰, 평점, 배송, 혜택 등)",
-  "marketPositioning": "시장 포지셔닝 전략 제안 (경쟁 우위 확보 방안)",
-  "recommendations": ["마케팅 추천 사항 1", "마케팅 추천 사항 2", "마케팅 추천 사항 3"]${comparisonInstruction}
-}
+${responseStructure}
 
 모든 텍스트는 한국어로, 구체적인 수치나 브랜드명을 인용하여 작성하세요.`;
 
@@ -89,7 +187,7 @@ ${hasBoth ? '\n두 플랫폼의 데이터가 모두 제공되었으므로, 각 �
 
   const userPrompt = `다음은 "${keyword}" 키워드로 ${platformLabel}에서 검색한 결과입니다.
 
-${userPromptData}위 데이터를 분석하여 이커머스 마케팅 관점의 인사이트를 JSON 형식으로 제공해주세요.`;
+${userPromptData}위 데이터를 분석하여 구조화된 JSON 형식으로 제공해주세요.`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -99,12 +197,27 @@ ${userPromptData}위 데이터를 분석하여 이커머스 마케팅 관점의 
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: hasBoth ? 2500 : 2000,
+      max_tokens: hasBoth ? 4500 : 3000,
       response_format: { type: 'json_object' },
     });
 
     const responseText = response.choices[0].message.content || '';
     const parsedResponse = JSON.parse(responseText);
+
+    // 구조화된 분석 데이터 생성
+    const gptAnalysis: ShoppingAnalysisData = {
+      strategy: {
+        marketPositioning: parsedResponse.strategy?.marketPositioning || '',
+        marketingStrategy: parsedResponse.strategy?.marketingStrategy || '',
+      },
+    };
+
+    if (hasBoth) {
+      gptAnalysis.naver = validatePlatformData(parsedResponse.naver);
+      gptAnalysis.coupang = validatePlatformData(parsedResponse.coupang);
+    } else {
+      gptAnalysis.combined = validatePlatformData(parsedResponse.combined);
+    }
 
     return {
       keyword,
@@ -112,15 +225,7 @@ ${userPromptData}위 데이터를 분석하여 이커머스 마케팅 관점의 
       naverInputText: naverText,
       coupangInputText: coupangText,
       sources,
-      gptAnalysis: {
-        priceAnalysis: parsedResponse.priceAnalysis || '분석 결과 없음',
-        topBrands: parsedResponse.topBrands || '분석 결과 없음',
-        productFeatures: parsedResponse.productFeatures || '분석 결과 없음',
-        purchaseFactors: parsedResponse.purchaseFactors || '분석 결과 없음',
-        marketPositioning: parsedResponse.marketPositioning || '분석 결과 없음',
-        recommendations: parsedResponse.recommendations || [],
-        platformComparison: hasBoth ? (parsedResponse.platformComparison || undefined) : undefined,
-      },
+      gptAnalysis,
     };
   } catch (error) {
     console.error('OpenAI API 오류:', error);

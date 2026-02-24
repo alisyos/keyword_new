@@ -81,6 +81,70 @@ export interface AdAnalysisResult {
   }>;
 }
 
+// ===== 쇼핑 검색 분석 구조화 타입 =====
+
+// 섹션 1: 전체 분석
+export interface ShoppingOverallAnalysis {
+  totalProducts: number;        // 총 상품 수
+  averagePrice: number;         // 평균 가격
+  totalReviews: number;         // 총 리뷰 수
+  averageRating: number;        // 평균 평점
+  estimatedRevenue: number;     // 총 매출액(추정)
+  insight: string;              // 핵심 인사이트
+}
+
+// 섹션 2: 판매자/브랜드 분석 - TOP 5 행
+export interface ShoppingSellerRankItem {
+  rank: number;                 // 순위
+  seller: string;               // 판매자
+  productName: string;          // 상품명
+  price: number;                // 가격
+  reviews: number;              // 리뷰
+  rating: number;               // 평점
+  estimatedRevenue: number;     // 매출액(추정)
+}
+
+export interface ShoppingSellerAnalysis {
+  topSellers: ShoppingSellerRankItem[];  // TOP 5
+  insight: string;                        // 핵심 인사이트
+}
+
+// 섹션 3: 가격대 분석 - 구간별 행
+export interface ShoppingPriceRangeItem {
+  range: string;                // 가격대 구간 (예: "1~3만원")
+  productCount: number;         // 상품수
+  averagePrice: number;         // 평균 가격
+  totalReviews: number;         // 리뷰
+  averageRating: number;        // 평점
+  estimatedRevenue: number;     // 매출액(추정)
+}
+
+export interface ShoppingPriceRangeAnalysis {
+  priceRanges: ShoppingPriceRangeItem[];  // 가격대 구간 배열
+  insight: string;                         // 핵심 인사이트
+}
+
+// 섹션 4: 전략
+export interface ShoppingStrategy {
+  marketPositioning: string;    // 매체별 시장 포지셔닝
+  marketingStrategy: string;    // 마케팅 전략
+}
+
+// 플랫폼별 데이터 래퍼
+export interface ShoppingPlatformData {
+  overall: ShoppingOverallAnalysis;
+  sellers: ShoppingSellerAnalysis;
+  priceRanges: ShoppingPriceRangeAnalysis;
+}
+
+// 최종 분석 데이터 구조
+export interface ShoppingAnalysisData {
+  naver?: ShoppingPlatformData;     // 네이버 데이터 (양쪽 입력 시)
+  coupang?: ShoppingPlatformData;   // 쿠팡 데이터 (양쪽 입력 시)
+  combined?: ShoppingPlatformData;  // 단일 플랫폼 데이터
+  strategy: ShoppingStrategy;       // 항상 존재
+}
+
 // 쇼핑 검색 분석 결과 (텍스트 붙여넣기 기반 - 네이버/쿠팡 멀티 플랫폼)
 export interface ShoppingSearchAnalysisResult {
   keyword: string;
@@ -88,15 +152,7 @@ export interface ShoppingSearchAnalysisResult {
   naverInputText?: string;
   coupangInputText?: string;
   sources: ('naver' | 'coupang')[];
-  gptAnalysis: {
-    priceAnalysis: string;
-    topBrands: string;
-    productFeatures: string;
-    purchaseFactors: string;
-    marketPositioning: string;
-    recommendations: string[];
-    platformComparison?: string;
-  };
+  gptAnalysis: ShoppingAnalysisData;
 }
 
 // 브랜드 비교 데이터

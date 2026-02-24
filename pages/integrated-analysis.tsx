@@ -10,6 +10,7 @@ import {
   KeywordAnalysisResult,
   AdAnalysisResult,
   ShoppingSearchAnalysisResult,
+  ShoppingPlatformData,
   BrandComparisonResult,
   BrandKeywordFilter,
   ContentType,
@@ -2455,68 +2456,220 @@ const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
             </button>
           </div>
 
-          {/* 쇼핑 분석 결과 */}
-          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-4">
-            <h3 className="text-sm font-bold text-emerald-800 flex items-center mb-4">
-              <span className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white text-xs mr-2">🛒</span>
-              쇼핑 검색 분석 결과
-            </h3>
+          {/* 쇼핑 분석 결과 - 4개 구조화 섹션 */}
+          {(() => {
+            const gptAnalysis = shoppingAnalysis.gptAnalysis;
+            const isDual = shoppingAnalysis.sources.length === 2;
+            const sourceLabel = shoppingAnalysis.sources.includes('coupang') ? '쿠팡' : '네이버 쇼핑';
+            const platforms: { key: string; data: ShoppingPlatformData | undefined; label: string; color: string }[] = isDual
+              ? [
+                  { key: 'naver', data: gptAnalysis.naver, label: '네이버 쇼핑', color: 'green' },
+                  { key: 'coupang', data: gptAnalysis.coupang, label: '쿠팡', color: 'orange' },
+                ]
+              : [{ key: 'combined', data: gptAnalysis.combined, label: sourceLabel, color: 'blue' }];
 
-            <div className="space-y-3">
-              {/* 가격 분석 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-emerald-500">
-                <div className="text-sm font-bold text-emerald-700 mb-2">💰 가격대 분석</div>
-                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.priceAnalysis}</p>
-              </div>
+            const formatCurrency = (v: number) => {
+              if (v >= 100000000) return `${(v / 100000000).toFixed(1)}억원`;
+              if (v >= 10000) return `${Math.round(v / 10000).toLocaleString()}만원`;
+              return `${v.toLocaleString()}원`;
+            };
 
-              {/* 주요 브랜드 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
-                <div className="text-sm font-bold text-blue-700 mb-2">🏷️ 주요 브랜드/판매처</div>
-                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.topBrands}</p>
-              </div>
+            return (
+              <div className="space-y-5">
 
-              {/* 상품 특성 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-violet-500">
-                <div className="text-sm font-bold text-violet-700 mb-2">📦 상품 특성 및 차별화 포인트</div>
-                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.productFeatures}</p>
-              </div>
-
-              {/* 구매 결정 요인 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-orange-500">
-                <div className="text-sm font-bold text-orange-700 mb-2">🎯 소비자 구매 결정 요인</div>
-                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.purchaseFactors}</p>
-              </div>
-
-              {/* 시장 포지셔닝 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
-                <div className="text-sm font-bold text-pink-700 mb-2">📈 시장 포지셔닝 전략</div>
-                <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.marketPositioning}</p>
-              </div>
-
-              {/* 네이버 vs 쿠팡 비교 (두 플랫폼 모두 입력 시) */}
-              {shoppingAnalysis.gptAnalysis.platformComparison && (
-                <div className="bg-white rounded-lg p-4 border-l-4 border-cyan-500">
-                  <div className="text-sm font-bold text-cyan-700 mb-2">🔄 네이버 vs 쿠팡 비교</div>
-                  <p className="text-sm text-gray-700">{shoppingAnalysis.gptAnalysis.platformComparison}</p>
+                {/* 섹션 1: 전체 분석 */}
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-4">
+                  <h3 className="text-sm font-bold text-emerald-800 flex items-center mb-4">
+                    <span className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white text-xs mr-2">📊</span>
+                    전체 분석
+                  </h3>
+                  {isDual ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {platforms.map((p) => p.data && (
+                        <div key={p.key} className="bg-white rounded-lg p-4 border border-gray-200">
+                          <div className={`text-sm font-bold mb-3 ${p.color === 'green' ? 'text-green-700' : 'text-orange-700'}`}>
+                            {p.color === 'green' ? '🟢' : '🟠'} {p.label}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="bg-gray-50 rounded p-2 text-center">
+                              <div className="text-xs text-gray-500">총 상품 수</div>
+                              <div className="text-sm font-bold text-gray-800">{p.data.overall.totalProducts.toLocaleString()}개</div>
+                            </div>
+                            <div className="bg-gray-50 rounded p-2 text-center">
+                              <div className="text-xs text-gray-500">평균 가격</div>
+                              <div className="text-sm font-bold text-gray-800">{formatCurrency(p.data.overall.averagePrice)}</div>
+                            </div>
+                            <div className="bg-gray-50 rounded p-2 text-center">
+                              <div className="text-xs text-gray-500">총 리뷰 수</div>
+                              <div className="text-sm font-bold text-gray-800">{p.data.overall.totalReviews.toLocaleString()}개</div>
+                            </div>
+                            <div className="bg-gray-50 rounded p-2 text-center">
+                              <div className="text-xs text-gray-500">평균 평점</div>
+                              <div className="text-sm font-bold text-gray-800">{p.data.overall.averageRating.toFixed(1)}</div>
+                            </div>
+                            <div className="bg-gray-50 rounded p-2 text-center col-span-2">
+                              <div className="text-xs text-gray-500">총 매출액(추정)</div>
+                              <div className="text-sm font-bold text-emerald-700">{formatCurrency(p.data.overall.estimatedRevenue)}</div>
+                            </div>
+                          </div>
+                          {p.data.overall.insight && (
+                            <p className="text-xs text-gray-600 bg-gray-50 rounded p-2">{p.data.overall.insight}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    platforms[0].data && (
+                      <div className="bg-white rounded-lg p-4 border border-gray-200">
+                        <div className="grid grid-cols-3 gap-3 mb-3">
+                          <div className="bg-gray-50 rounded p-3 text-center">
+                            <div className="text-xs text-gray-500">총 상품 수</div>
+                            <div className="text-lg font-bold text-gray-800">{platforms[0].data.overall.totalProducts.toLocaleString()}개</div>
+                          </div>
+                          <div className="bg-gray-50 rounded p-3 text-center">
+                            <div className="text-xs text-gray-500">평균 가격</div>
+                            <div className="text-lg font-bold text-gray-800">{formatCurrency(platforms[0].data.overall.averagePrice)}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded p-3 text-center">
+                            <div className="text-xs text-gray-500">총 리뷰 수</div>
+                            <div className="text-lg font-bold text-gray-800">{platforms[0].data.overall.totalReviews.toLocaleString()}개</div>
+                          </div>
+                          <div className="bg-gray-50 rounded p-3 text-center">
+                            <div className="text-xs text-gray-500">평균 평점</div>
+                            <div className="text-lg font-bold text-gray-800">{platforms[0].data.overall.averageRating.toFixed(1)}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded p-3 text-center col-span-2">
+                            <div className="text-xs text-gray-500">총 매출액(추정)</div>
+                            <div className="text-lg font-bold text-emerald-700">{formatCurrency(platforms[0].data.overall.estimatedRevenue)}</div>
+                          </div>
+                        </div>
+                        {platforms[0].data.overall.insight && (
+                          <p className="text-sm text-gray-600 bg-gray-50 rounded p-2">{platforms[0].data.overall.insight}</p>
+                        )}
+                      </div>
+                    )
+                  )}
                 </div>
-              )}
 
-              {/* 마케팅 추천 */}
-              <div className="bg-white rounded-lg p-4 border-l-4 border-amber-500">
-                <div className="text-sm font-bold text-amber-700 mb-2">✨ 마케팅 추천 사항</div>
-                <ul className="space-y-2">
-                  {shoppingAnalysis.gptAnalysis.recommendations.map((rec, idx) => (
-                    <li key={idx} className="text-sm text-gray-700 flex items-start">
-                      <span className="w-5 h-5 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0">
-                        {idx + 1}
-                      </span>
-                      {rec}
-                    </li>
+                {/* 섹션 2: 판매자/브랜드 분석 */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4">
+                  <h3 className="text-sm font-bold text-blue-800 flex items-center mb-4">
+                    <span className="w-6 h-6 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xs mr-2">🏷️</span>
+                    판매자/브랜드 분석 TOP 5
+                  </h3>
+                  {platforms.map((p) => p.data && (
+                    <div key={p.key} className="mb-4 last:mb-0">
+                      {isDual && (
+                        <div className={`text-sm font-bold mb-2 ${p.color === 'green' ? 'text-green-700' : 'text-orange-700'}`}>
+                          {p.color === 'green' ? '🟢' : '🟠'} {p.label}
+                        </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-blue-100 text-blue-800">
+                              <th className="p-2 text-center border border-blue-200 w-10">순위</th>
+                              <th className="p-2 text-left border border-blue-200">판매자</th>
+                              <th className="p-2 text-left border border-blue-200">상품명</th>
+                              <th className="p-2 text-right border border-blue-200">가격</th>
+                              <th className="p-2 text-right border border-blue-200">리뷰</th>
+                              <th className="p-2 text-center border border-blue-200">평점</th>
+                              <th className="p-2 text-right border border-blue-200">매출액(추정)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {p.data.sellers.topSellers.map((seller) => (
+                              <tr key={seller.rank} className="bg-white hover:bg-blue-50">
+                                <td className="p-2 text-center border border-gray-200 font-bold text-blue-600">{seller.rank}</td>
+                                <td className="p-2 text-left border border-gray-200 font-medium">{seller.seller}</td>
+                                <td className="p-2 text-left border border-gray-200 text-gray-600 max-w-[200px] truncate">{seller.productName}</td>
+                                <td className="p-2 text-right border border-gray-200">{formatCurrency(seller.price)}</td>
+                                <td className="p-2 text-right border border-gray-200">{seller.reviews.toLocaleString()}</td>
+                                <td className="p-2 text-center border border-gray-200">{seller.rating.toFixed(1)}</td>
+                                <td className="p-2 text-right border border-gray-200 font-medium text-emerald-700">{formatCurrency(seller.estimatedRevenue)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {p.data.sellers.insight && (
+                        <p className="text-xs text-gray-600 bg-white rounded p-2 mt-2 border border-gray-100">{p.data.sellers.insight}</p>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </div>
+
+                {/* 섹션 3: 가격대 분석 */}
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-lg border border-amber-200 p-4">
+                  <h3 className="text-sm font-bold text-amber-800 flex items-center mb-4">
+                    <span className="w-6 h-6 bg-gradient-to-r from-amber-500 to-yellow-500 rounded-full flex items-center justify-center text-white text-xs mr-2">💰</span>
+                    가격대 분석
+                  </h3>
+                  {platforms.map((p) => p.data && (
+                    <div key={p.key} className="mb-4 last:mb-0">
+                      {isDual && (
+                        <div className={`text-sm font-bold mb-2 ${p.color === 'green' ? 'text-green-700' : 'text-orange-700'}`}>
+                          {p.color === 'green' ? '🟢' : '🟠'} {p.label}
+                        </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-amber-100 text-amber-800">
+                              <th className="p-2 text-left border border-amber-200">가격대 구간</th>
+                              <th className="p-2 text-right border border-amber-200">상품수</th>
+                              <th className="p-2 text-right border border-amber-200">평균 가격</th>
+                              <th className="p-2 text-right border border-amber-200">리뷰</th>
+                              <th className="p-2 text-center border border-amber-200">평점</th>
+                              <th className="p-2 text-right border border-amber-200">매출액(추정)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {p.data.priceRanges.priceRanges.map((pr, idx) => (
+                              <tr key={idx} className="bg-white hover:bg-amber-50">
+                                <td className="p-2 text-left border border-gray-200 font-medium">{pr.range}</td>
+                                <td className="p-2 text-right border border-gray-200">{pr.productCount.toLocaleString()}개</td>
+                                <td className="p-2 text-right border border-gray-200">{formatCurrency(pr.averagePrice)}</td>
+                                <td className="p-2 text-right border border-gray-200">{pr.totalReviews.toLocaleString()}</td>
+                                <td className="p-2 text-center border border-gray-200">{pr.averageRating.toFixed(1)}</td>
+                                <td className="p-2 text-right border border-gray-200 font-medium text-emerald-700">{formatCurrency(pr.estimatedRevenue)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {p.data.priceRanges.insight && (
+                        <p className="text-xs text-gray-600 bg-white rounded p-2 mt-2 border border-gray-100">{p.data.priceRanges.insight}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 섹션 4: 전략 */}
+                <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-lg border border-violet-200 p-4">
+                  <h3 className="text-sm font-bold text-violet-800 flex items-center mb-4">
+                    <span className="w-6 h-6 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs mr-2">🎯</span>
+                    전략
+                  </h3>
+                  <div className="space-y-3">
+                    {gptAnalysis.strategy.marketPositioning && (
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-violet-500">
+                        <div className="text-sm font-bold text-violet-700 mb-2">📈 매체별 시장 포지셔닝</div>
+                        <p className="text-sm text-gray-700 whitespace-pre-line">{gptAnalysis.strategy.marketPositioning}</p>
+                      </div>
+                    )}
+                    {gptAnalysis.strategy.marketingStrategy && (
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-purple-500">
+                        <div className="text-sm font-bold text-purple-700 mb-2">🚀 마케팅 전략</div>
+                        <p className="text-sm text-gray-700 whitespace-pre-line">{gptAnalysis.strategy.marketingStrategy}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
       )}
 
