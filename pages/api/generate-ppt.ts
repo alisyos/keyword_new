@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import PptxGenJS from 'pptxgenjs';
-import { IntegratedReportData, KeywordType } from '../../types/integrated-analysis';
+import { IntegratedReportData, KeywordType, ShoppingSearchAnalysisResult, ShoppingPlatformData } from '../../types/integrated-analysis';
 
 // 색상 테마
 const COLORS = {
@@ -38,12 +38,12 @@ function getPptLabels(keywordType: KeywordType) {
       coverTitle: 'E-COMMERCE INTELLIGENCE REPORT',
       coverSubtitle: '이커머스 시장 분석 리포트',
       tocPerception: '2. 3단계 구매 여정',
-      tocMarket: '5. 이커머스 시장 환경 분석',
+      tocMarket: '5. 쇼핑 검색 분석',
       tocStrategy: '7. 실행 전략 (이커머스 5대 전략)',
       slidePerceptionTitle: '3단계 구매 여정',
       slidePerceptionSub: 'Shopping Decision Journey',
-      slideMarketTitle: '이커머스 시장 환경 분석',
-      slideMarketSub: 'E-Commerce Market Environment',
+      slideMarketTitle: '쇼핑 검색 분석',
+      slideMarketSub: 'Shopping Search Analysis',
     },
     brand: {
       coverTitle: 'BRAND INTELLIGENCE REPORT',
@@ -69,7 +69,7 @@ export default async function handler(
   }
 
   try {
-    const { report } = req.body as { report: IntegratedReportData };
+    const { report, shoppingAnalysis } = req.body as { report: IntegratedReportData; shoppingAnalysis?: ShoppingSearchAnalysisResult };
 
     if (!report) {
       return res.status(400).json({ error: 'Report data is required' });
@@ -564,90 +564,317 @@ export default async function handler(
 
     addPageNumber(slide7date, 7);
 
-    // ========== Slide 8: 시장 환경 분석 ==========
-    const slide7 = pptx.addSlide();
-    addSlideHeader(slide7, pptLabels.slideMarketTitle, pptLabels.slideMarketSub);
+    // ========== Slide 8 (+ optional 9): 시장 환경 분석 or 쇼핑 검색 분석 ==========
+    let marketSectionEndSlide = 8; // 시장 섹션이 끝나는 슬라이드 번호
 
-    // 경쟁 분석
-    slide7.addShape('rect', {
-      x: 0.5, y: 1.05, w: 4.5, h: 3.6,
-      fill: { color: COLORS.light },
-      line: { color: COLORS.slate, width: 1 },
-    });
+    const formatCurrency = (v: number) => {
+      if (v >= 100000000) return `${(v / 100000000).toFixed(1)}억원`;
+      if (v >= 10000) return `${Math.round(v / 10000).toLocaleString()}만원`;
+      return `${v.toLocaleString()}원`;
+    };
 
-    slide7.addText('경쟁 구도 분석', {
-      x: 0.6, y: 1.15, w: 4.3, h: 0.35,
-      fontSize: 13, color: COLORS.slate, fontFace: 'Arial', bold: true,
-    });
+    if (keywordType === 'shopping' && shoppingAnalysis) {
+      // ===== 쇼핑 검색 분석: 2개 슬라이드 =====
+      const gptAnalysis = shoppingAnalysis.gptAnalysis;
+      const isDual = shoppingAnalysis.sources.length === 2;
+      const sourceLabel = shoppingAnalysis.sources.includes('coupang') ? '쿠팡' : '네이버 쇼핑';
+      const platforms: { key: string; data: ShoppingPlatformData | undefined; label: string }[] = isDual
+        ? [
+            { key: 'naver', data: gptAnalysis.naver, label: '네이버 쇼핑' },
+            { key: 'coupang', data: gptAnalysis.coupang, label: '쿠팡' },
+          ]
+        : [{ key: 'combined', data: gptAnalysis.combined, label: sourceLabel }];
 
-    const compLevel = report.marketEnvironment?.competitionAnalysis?.level || '중간';
-    const levelColor = compLevel === '높음' ? COLORS.danger : compLevel === '중간' ? COLORS.warning : COLORS.success;
-    slide7.addText(`경쟁 강도: ${compLevel}`, {
-      x: 0.6, y: 1.55, w: 4.3, h: 0.3,
-      fontSize: 11, color: levelColor, fontFace: 'Arial', bold: true,
-    });
+      // ----- 슬라이드 8: 전체 분석 메트릭 + 판매자 TOP 5 -----
+      const shopSlide1 = pptx.addSlide();
+      addSlideHeader(shopSlide1, pptLabels.slideMarketTitle + ' (1/2)', pptLabels.slideMarketSub);
 
-    slide7.addText(report.marketEnvironment?.competitionAnalysis?.insight || '', {
-      x: 0.6, y: 1.9, w: 4.3, h: 1.2,
-      fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
-      valign: 'top',
-    });
+      let yPos = 1.1;
 
-    slide7.addText('주요 플레이어:', {
-      x: 0.6, y: 3.15, w: 4.3, h: 0.25,
-      fontSize: 9, color: COLORS.slate, fontFace: 'Arial', bold: true,
-    });
-
-    const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 5) || [];
-    players.forEach((player, idx) => {
-      slide7.addText(`• ${player}`, {
-        x: 0.6, y: 3.4 + idx * 0.28, w: 4.3, h: 0.25,
-        fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+      // 전체 분석 메트릭
+      shopSlide1.addText('전체 분석', {
+        x: 0.5, y: yPos, w: 9, h: 0.3,
+        fontSize: 13, color: COLORS.accent, fontFace: 'Arial', bold: true,
       });
-    });
+      yPos += 0.35;
 
-    // 디지털 트렌드
-    slide7.addShape('rect', {
-      x: 5.2, y: 1.05, w: 4.3, h: 3.6,
-      fill: { color: 'E3F2FD' },
-      line: { color: COLORS.primary, width: 1 },
-    });
+      platforms.forEach((p) => {
+        if (!p.data) return;
+        if (isDual) {
+          shopSlide1.addText(`${p.label}`, {
+            x: 0.5, y: yPos, w: 9, h: 0.25,
+            fontSize: 10, color: COLORS.dark, fontFace: 'Arial', bold: true,
+          });
+          yPos += 0.28;
+        }
 
-    slide7.addText('디지털 트렌드', {
-      x: 5.3, y: 1.15, w: 4.1, h: 0.35,
-      fontSize: 13, color: COLORS.primary, fontFace: 'Arial', bold: true,
-    });
+        const metrics = [
+          { label: '총 상품수', value: `${p.data.overall.totalProducts.toLocaleString()}개` },
+          { label: '평균 가격', value: formatCurrency(p.data.overall.averagePrice) },
+          { label: '총 리뷰수', value: `${p.data.overall.totalReviews.toLocaleString()}개` },
+          { label: '평균 평점', value: p.data.overall.averageRating.toFixed(1) },
+          { label: '총 매출액(추정)', value: formatCurrency(p.data.overall.estimatedRevenue) },
+        ];
 
-    slide7.addText(`모바일 비중: ${report.marketEnvironment?.digitalTrends?.mobileShare || '-'}`, {
-      x: 5.3, y: 1.6, w: 4.1, h: 0.3,
-      fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
-    });
+        metrics.forEach((m, mIdx) => {
+          const col = mIdx % 5;
+          shopSlide1.addShape('rect', {
+            x: 0.5 + col * 1.8, y: yPos, w: 1.65, h: 0.7,
+            fill: { color: COLORS.light },
+            line: { color: COLORS.accent, width: 1 },
+          });
+          shopSlide1.addText(m.label, {
+            x: 0.5 + col * 1.8, y: yPos + 0.05, w: 1.65, h: 0.2,
+            fontSize: 7, color: COLORS.slate, fontFace: 'Arial', align: 'center',
+          });
+          shopSlide1.addText(m.value, {
+            x: 0.5 + col * 1.8, y: yPos + 0.28, w: 1.65, h: 0.35,
+            fontSize: 11, color: COLORS.dark, fontFace: 'Arial', align: 'center', bold: true,
+          });
+        });
+        yPos += 0.8;
 
-    slide7.addText(`콘텐츠 신선도: ${report.marketEnvironment?.digitalTrends?.contentFreshness || '-'}`, {
-      x: 5.3, y: 1.95, w: 4.1, h: 0.3,
-      fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
-    });
-
-    slide7.addText('주요 변화:', {
-      x: 5.3, y: 2.4, w: 4.1, h: 0.25,
-      fontSize: 9, color: COLORS.primary, fontFace: 'Arial', bold: true,
-    });
-
-    report.marketEnvironment?.digitalTrends?.orgChanges?.slice(0, 6).forEach((change, idx) => {
-      slide7.addText(`→ ${change}`, {
-        x: 5.3, y: 2.7 + idx * 0.35, w: 4.1, h: 0.32,
-        fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        if (p.data.overall.insight) {
+          shopSlide1.addText(p.data.overall.insight, {
+            x: 0.5, y: yPos, w: 9, h: 0.3,
+            fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
+          });
+          yPos += 0.3;
+        }
       });
-    });
 
-    addPageNumber(slide7, 8);
+      // 판매자 TOP 5
+      yPos += 0.1;
+      shopSlide1.addText('판매자/브랜드 TOP 5', {
+        x: 0.5, y: yPos, w: 9, h: 0.3,
+        fontSize: 13, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+      yPos += 0.35;
 
-    // ========== Slides 9+: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========
+      platforms.forEach((p) => {
+        if (!p.data) return;
+        if (isDual) {
+          shopSlide1.addText(`${p.label}`, {
+            x: 0.5, y: yPos, w: 9, h: 0.25,
+            fontSize: 10, color: COLORS.dark, fontFace: 'Arial', bold: true,
+          });
+          yPos += 0.28;
+        }
+
+        const headerRow = ['순위', '판매자', '상품명', '가격', '리뷰', '평점', '매출액'].map(
+          (text) => ({ text, options: { bold: true, color: COLORS.white, fill: { color: COLORS.primary } } })
+        );
+        const dataRows = p.data.sellers.topSellers.map((s) => [
+          { text: `${s.rank}`, options: { align: 'center' as const } },
+          { text: s.seller },
+          { text: s.productName.length > 20 ? s.productName.substring(0, 20) + '...' : s.productName },
+          { text: formatCurrency(s.price), options: { align: 'right' as const } },
+          { text: s.reviews.toLocaleString(), options: { align: 'right' as const } },
+          { text: s.rating.toFixed(1), options: { align: 'center' as const } },
+          { text: formatCurrency(s.estimatedRevenue), options: { align: 'right' as const } },
+        ]);
+
+        const tableRows = [headerRow, ...dataRows];
+        shopSlide1.addTable(tableRows, {
+          x: 0.5, y: yPos, w: 9,
+          fontSize: 8,
+          fontFace: 'Arial',
+          border: { type: 'solid', pt: 0.5, color: '9CA3AF' },
+          colW: [0.6, 1.3, 2.5, 1.0, 0.8, 0.6, 1.2],
+          rowH: 0.25,
+          autoPage: false,
+        });
+        yPos += 0.25 * (dataRows.length + 1) + 0.1;
+      });
+
+      addPageNumber(shopSlide1, 8);
+
+      // ----- 슬라이드 9: 가격대 분석 + 전략 -----
+      const shopSlide2 = pptx.addSlide();
+      addSlideHeader(shopSlide2, pptLabels.slideMarketTitle + ' (2/2)', pptLabels.slideMarketSub);
+
+      yPos = 1.1;
+
+      // 가격대 분석
+      shopSlide2.addText('가격대 분석', {
+        x: 0.5, y: yPos, w: 9, h: 0.3,
+        fontSize: 13, color: COLORS.warning, fontFace: 'Arial', bold: true,
+      });
+      yPos += 0.35;
+
+      platforms.forEach((p) => {
+        if (!p.data) return;
+        if (isDual) {
+          shopSlide2.addText(`${p.label}`, {
+            x: 0.5, y: yPos, w: 9, h: 0.25,
+            fontSize: 10, color: COLORS.dark, fontFace: 'Arial', bold: true,
+          });
+          yPos += 0.28;
+        }
+
+        const priceHeaderRow = ['가격대 구간', '상품수', '평균 가격', '리뷰', '평점', '매출액'].map(
+          (text) => ({ text, options: { bold: true, color: COLORS.white, fill: { color: COLORS.warning } } })
+        );
+        const dataRows = p.data.priceRanges.priceRanges.map((pr) => [
+          { text: pr.range },
+          { text: `${pr.productCount.toLocaleString()}개`, options: { align: 'right' as const } },
+          { text: formatCurrency(pr.averagePrice), options: { align: 'right' as const } },
+          { text: pr.totalReviews.toLocaleString(), options: { align: 'right' as const } },
+          { text: pr.averageRating.toFixed(1), options: { align: 'center' as const } },
+          { text: formatCurrency(pr.estimatedRevenue), options: { align: 'right' as const } },
+        ]);
+
+        const tableRows = [priceHeaderRow, ...dataRows];
+        shopSlide2.addTable(tableRows, {
+          x: 0.5, y: yPos, w: 9,
+          fontSize: 8,
+          fontFace: 'Arial',
+          border: { type: 'solid', pt: 0.5, color: '9CA3AF' },
+          colW: [1.8, 1.0, 1.3, 1.0, 0.7, 1.5],
+          rowH: 0.25,
+          autoPage: false,
+        });
+        yPos += 0.25 * (dataRows.length + 1) + 0.15;
+
+        if (p.data.priceRanges.insight) {
+          shopSlide2.addText(p.data.priceRanges.insight, {
+            x: 0.5, y: yPos, w: 9, h: 0.3,
+            fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
+          });
+          yPos += 0.3;
+        }
+      });
+
+      // 전략
+      yPos += 0.1;
+      shopSlide2.addText('전략', {
+        x: 0.5, y: yPos, w: 9, h: 0.3,
+        fontSize: 13, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+      });
+      yPos += 0.35;
+
+      if (gptAnalysis.strategy.marketPositioning) {
+        shopSlide2.addShape('rect', {
+          x: 0.5, y: yPos, w: 4.3, h: 1.5,
+          fill: { color: 'F3E8FF' },
+          line: { color: COLORS.secondary, width: 1 },
+        });
+        shopSlide2.addText('📈 매체별 시장 포지셔닝', {
+          x: 0.6, y: yPos + 0.05, w: 4.1, h: 0.25,
+          fontSize: 9, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+        });
+        shopSlide2.addText(gptAnalysis.strategy.marketPositioning, {
+          x: 0.6, y: yPos + 0.3, w: 4.1, h: 1.1,
+          fontSize: 8, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+        });
+      }
+
+      if (gptAnalysis.strategy.marketingStrategy) {
+        shopSlide2.addShape('rect', {
+          x: 5.2, y: yPos, w: 4.3, h: 1.5,
+          fill: { color: 'EDE9FE' },
+          line: { color: COLORS.secondary, width: 1 },
+        });
+        shopSlide2.addText('🚀 마케팅 전략', {
+          x: 5.3, y: yPos + 0.05, w: 4.1, h: 0.25,
+          fontSize: 9, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+        });
+        shopSlide2.addText(gptAnalysis.strategy.marketingStrategy, {
+          x: 5.3, y: yPos + 0.3, w: 4.1, h: 1.1,
+          fontSize: 8, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+        });
+      }
+
+      addPageNumber(shopSlide2, 9);
+      marketSectionEndSlide = 9; // 쇼핑은 2개 슬라이드 사용
+
+    } else {
+      // ===== 기존 시장 환경 분석: 1개 슬라이드 =====
+      const slide7 = pptx.addSlide();
+      addSlideHeader(slide7, pptLabels.slideMarketTitle, pptLabels.slideMarketSub);
+
+      // 경쟁 분석
+      slide7.addShape('rect', {
+        x: 0.5, y: 1.05, w: 4.5, h: 3.6,
+        fill: { color: COLORS.light },
+        line: { color: COLORS.slate, width: 1 },
+      });
+
+      slide7.addText('경쟁 구도 분석', {
+        x: 0.6, y: 1.15, w: 4.3, h: 0.35,
+        fontSize: 13, color: COLORS.slate, fontFace: 'Arial', bold: true,
+      });
+
+      const compLevel = report.marketEnvironment?.competitionAnalysis?.level || '중간';
+      const levelColor = compLevel === '높음' ? COLORS.danger : compLevel === '중간' ? COLORS.warning : COLORS.success;
+      slide7.addText(`경쟁 강도: ${compLevel}`, {
+        x: 0.6, y: 1.55, w: 4.3, h: 0.3,
+        fontSize: 11, color: levelColor, fontFace: 'Arial', bold: true,
+      });
+
+      slide7.addText(report.marketEnvironment?.competitionAnalysis?.insight || '', {
+        x: 0.6, y: 1.9, w: 4.3, h: 1.2,
+        fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        valign: 'top',
+      });
+
+      slide7.addText('주요 플레이어:', {
+        x: 0.6, y: 3.15, w: 4.3, h: 0.25,
+        fontSize: 9, color: COLORS.slate, fontFace: 'Arial', bold: true,
+      });
+
+      const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 5) || [];
+      players.forEach((player, idx) => {
+        slide7.addText(`• ${player}`, {
+          x: 0.6, y: 3.4 + idx * 0.28, w: 4.3, h: 0.25,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        });
+      });
+
+      // 디지털 트렌드
+      slide7.addShape('rect', {
+        x: 5.2, y: 1.05, w: 4.3, h: 3.6,
+        fill: { color: 'E3F2FD' },
+        line: { color: COLORS.primary, width: 1 },
+      });
+
+      slide7.addText('디지털 트렌드', {
+        x: 5.3, y: 1.15, w: 4.1, h: 0.35,
+        fontSize: 13, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      slide7.addText(`모바일 비중: ${report.marketEnvironment?.digitalTrends?.mobileShare || '-'}`, {
+        x: 5.3, y: 1.6, w: 4.1, h: 0.3,
+        fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
+      });
+
+      slide7.addText(`콘텐츠 신선도: ${report.marketEnvironment?.digitalTrends?.contentFreshness || '-'}`, {
+        x: 5.3, y: 1.95, w: 4.1, h: 0.3,
+        fontSize: 11, color: COLORS.dark, fontFace: 'Arial',
+      });
+
+      slide7.addText('주요 변화:', {
+        x: 5.3, y: 2.4, w: 4.1, h: 0.25,
+        fontSize: 9, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      report.marketEnvironment?.digitalTrends?.orgChanges?.slice(0, 6).forEach((change, idx) => {
+        slide7.addText(`→ ${change}`, {
+          x: 5.3, y: 2.7 + idx * 0.35, w: 4.1, h: 0.32,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        });
+      });
+
+      addPageNumber(slide7, 8);
+      marketSectionEndSlide = 8; // 일반/브랜드는 1개 슬라이드
+    }
+
+    // ========== Slides: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========
     const insights = report.marketingInsights || [];
     const insightSlides = insights.length;
 
     insights.forEach((insight, insightIdx) => {
-      const slideNum = 9 + insightIdx;
+      const slideNum = marketSectionEndSlide + 1 + insightIdx;
       const slide = pptx.addSlide();
       addSlideHeader(slide, `핵심 마케팅 인사이트 #${insight.id}`, insight.title);
 
@@ -701,7 +928,7 @@ export default async function handler(
     // ========== Slides: 실행 전략 ==========
     const strategies = report.actionStrategies || [];
     strategies.forEach((strategy, stratIdx) => {
-      const slideNum = 9 + insightSlides + stratIdx;
+      const slideNum = marketSectionEndSlide + 1 + insightSlides + stratIdx;
       const slide = pptx.addSlide();
       addSlideHeader(slide, `실행 전략 #${strategy.id}`, strategy.subtitle);
 
@@ -762,7 +989,7 @@ export default async function handler(
     });
 
     // ========== Slide: 90일 액션플랜 ==========
-    const actionPlanSlideNum = 9 + insightSlides + strategies.length;
+    const actionPlanSlideNum = marketSectionEndSlide + 1 + insightSlides + strategies.length;
     const actionPlanSlide = pptx.addSlide();
     addSlideHeader(actionPlanSlide, '90일 액션플랜', 'Action Timeline');
 
