@@ -2688,13 +2688,14 @@ const Step4ShoppingAnalysis: React.FC<Step4ShoppingProps> = ({
 // ===== 종합 리포트 컴포넌트 (PPT 수준 확장 버전) =====
 interface ReportProps {
   report: IntegratedReportData;
+  keywordType: KeywordType;
   onBack: () => void;
   onRegenerate: () => void;
   pptLoading: boolean;
   onPptDownload: () => void;
 }
 
-const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate, pptLoading, onPptDownload }) => {
+const IntegratedReport: React.FC<ReportProps> = ({ report, keywordType, onBack, onRegenerate, pptLoading, onPptDownload }) => {
   const [expandedSections, setExpandedSections] = useState<string[]>([
     'executiveSummary',
     'perceptionStages',
@@ -2706,6 +2707,31 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
     'actionPlan',
     'conclusion',
   ]);
+
+  // 유형별 동적 라벨
+  const reportLabels = {
+    general: {
+      badge: 'MARKETING INTELLIGENCE REPORT',
+      subtitle: '시장 분석 리포트',
+      perceptionTitle: '2. 3단계 소비자 인식 구조',
+      marketTitle: '5. 시장 환경 분석',
+      strategyTitle: '7. 실행 전략 (5대 전략)',
+    },
+    shopping: {
+      badge: 'E-COMMERCE INTELLIGENCE REPORT',
+      subtitle: '이커머스 시장 분석 리포트',
+      perceptionTitle: '2. 3단계 구매 여정',
+      marketTitle: '5. 이커머스 시장 환경 분석',
+      strategyTitle: '7. 실행 전략 (이커머스 5대 전략)',
+    },
+    brand: {
+      badge: 'BRAND INTELLIGENCE REPORT',
+      subtitle: '브랜드 경쟁력 분석 리포트',
+      perceptionTitle: '2. 3단계 브랜드 인식 구조',
+      marketTitle: '5. 브랜드 경쟁 환경 분석',
+      strategyTitle: '7. 실행 전략 (브랜드 5대 전략)',
+    },
+  }[keywordType];
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) =>
@@ -2741,10 +2767,10 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
       {/* 헤더 */}
       <div className="text-center mb-8">
         <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full mb-2">
-          MARKETING INTELLIGENCE REPORT
+          {reportLabels.badge}
         </div>
         <h2 className="text-3xl font-bold text-gray-800 mb-2">
-          "{report.keyword}" 시장 분석 리포트
+          "{report.keyword}" {reportLabels.subtitle}
         </h2>
         <p className="text-gray-600">
           {report.companyName && (
@@ -2781,7 +2807,7 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
       </SectionCard>
 
       {/* 2. 3단계 소비자 인식 구조 */}
-      <SectionCard id="perceptionStages" title="2. 3단계 소비자 인식 구조" bgColor="from-teal-600 to-cyan-600">
+      <SectionCard id="perceptionStages" title={reportLabels.perceptionTitle} bgColor="from-teal-600 to-cyan-600">
         <div className="grid md:grid-cols-3 gap-4">
           {/* Stage 1: 인지 */}
           <div className="bg-gradient-to-b from-teal-50 to-white rounded-xl p-5 border border-teal-200">
@@ -2900,19 +2926,23 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
         </div>
       </SectionCard>
 
-      {/* 4. 채널별 소비자 반응 */}
-      <SectionCard id="channelBreakdown" title="4. 채널별 소비자 반응" bgColor="from-violet-600 to-purple-600">
+      {/* 4. 채널별 콘텐츠 분석 */}
+      <SectionCard id="channelBreakdown" title="4. 채널별 콘텐츠 분석" bgColor="from-violet-600 to-purple-600">
         <div className="grid md:grid-cols-2 gap-4">
           {report.channelBreakdown?.map((channel, idx) => (
             <div key={idx} className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-3">
-                <h5 className="font-bold text-gray-800">{channel.channelName}</h5>
+                <h5 className="font-bold text-gray-800">{channel.channelName} {channel.contentSentimentCounts && <span className="text-sm font-normal text-gray-500">(총 {channel.contentSentimentCounts.total}건)</span>}</h5>
                 <span className="px-2 py-1 bg-violet-100 text-violet-700 text-xs rounded-full">{channel.channel}</span>
               </div>
-              <p className="text-sm text-violet-600 font-medium mb-3">{channel.role}</p>
+              <div className="mb-3">
+                <span className="text-xs font-medium text-gray-600">역할:</span>
+                <p className="text-sm text-violet-600 font-medium mt-0.5">{channel.role}</p>
+              </div>
 
               {channel.sentimentBreakdown && (
                 <div className="mb-3">
+                  <span className="text-xs font-medium text-gray-600 mb-1 block">감성 분석:</span>
                   <div className="flex h-2 rounded-full overflow-hidden bg-gray-200">
                     <div className="bg-green-500" style={{ width: `${channel.sentimentBreakdown.positive}%` }} />
                     <div className="bg-gray-400" style={{ width: `${channel.sentimentBreakdown.neutral}%` }} />
@@ -2923,6 +2953,43 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
                   </div>
                 </div>
               )}
+
+              {/* 긍부정평가 개수 */}
+              {channel.contentSentimentCounts && channel.contentSentimentCounts.total > 0 && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-gray-600 mb-1 block">긍부정 평가:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-0.5 bg-green-50 text-green-600 text-xs font-medium rounded">긍정 {channel.contentSentimentCounts.positive}건</span>
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 text-xs font-medium rounded">중립 {channel.contentSentimentCounts.neutral}건</span>
+                    <span className="px-2 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded">부정 {channel.contentSentimentCounts.negative}건</span>
+
+                  </div>
+                </div>
+              )}
+
+              {/* 작성일 분포 */}
+              {channel.dateAnalysis && channel.dateAnalysis.total > 0 && (() => {
+                const da = channel.dateAnalysis!;
+                const total = da.total;
+                const pct = (v: number) => Math.round((v / total) * 100);
+                return (
+                  <div className="mb-3">
+                    <span className="text-xs font-medium text-gray-600 mb-1 block">작성일 분포:</span>
+                    <div className="flex h-2 rounded-full overflow-hidden bg-gray-200">
+                      {da.threeMonths > 0 && <div className="bg-blue-500" style={{ width: `${pct(da.threeMonths)}%` }} />}
+                      {da.oneYear > 0 && <div className="bg-green-500" style={{ width: `${pct(da.oneYear)}%` }} />}
+                      {da.twoYears > 0 && <div className="bg-yellow-500" style={{ width: `${pct(da.twoYears)}%` }} />}
+                      {da.older > 0 && <div className="bg-red-500" style={{ width: `${pct(da.older)}%` }} />}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                      {da.threeMonths > 0 && <span className="text-xs text-gray-500"><span className="inline-block w-2 h-2 bg-blue-500 rounded-sm mr-0.5"></span>3개월 {da.threeMonths}건({pct(da.threeMonths)}%)</span>}
+                      {da.oneYear > 0 && <span className="text-xs text-gray-500"><span className="inline-block w-2 h-2 bg-green-500 rounded-sm mr-0.5"></span>~1년 {da.oneYear}건({pct(da.oneYear)}%)</span>}
+                      {da.twoYears > 0 && <span className="text-xs text-gray-500"><span className="inline-block w-2 h-2 bg-yellow-500 rounded-sm mr-0.5"></span>~2년 {da.twoYears}건({pct(da.twoYears)}%)</span>}
+                      {da.older > 0 && <span className="text-xs text-gray-500"><span className="inline-block w-2 h-2 bg-red-500 rounded-sm mr-0.5"></span>2년+ {da.older}건({pct(da.older)}%)</span>}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="mb-3">
                 <span className="text-xs font-medium text-gray-600">주요 관심사:</span>
@@ -2943,7 +3010,7 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
       </SectionCard>
 
       {/* 5. 시장 환경 분석 */}
-      <SectionCard id="marketEnvironment" title="5. 시장 환경 분석" bgColor="from-slate-600 to-gray-700">
+      <SectionCard id="marketEnvironment" title={reportLabels.marketTitle} bgColor="from-slate-600 to-gray-700">
         <div className="grid md:grid-cols-2 gap-6">
           {/* 경쟁 분석 */}
           <div className="bg-slate-50 rounded-lg p-5">
@@ -3051,7 +3118,7 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, onBack, onRegenerate,
       </SectionCard>
 
       {/* 8-12. 실행 전략 (5개 상세) */}
-      <SectionCard id="actionStrategies" title="7. 실행 전략 (5대 전략)" bgColor="from-emerald-600 to-teal-600">
+      <SectionCard id="actionStrategies" title={reportLabels.strategyTitle} bgColor="from-emerald-600 to-teal-600">
         <div className="space-y-4">
           {report.actionStrategies?.map((strategy, idx) => (
             <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -3632,14 +3699,39 @@ export default function IntegratedAnalysisPage() {
     }
   };
 
-  // 콘텐츠 분석 데이터 요약 (contentItems 제외하여 데이터 크기 축소)
+  // 콘텐츠 분석 데이터 요약 (contentItems 제외하여 데이터 크기 축소, 날짜 통계만 포함)
   const summarizeContentAnalysis = (content: KeywordAnalysisResult | null) => {
     if (!content) return undefined;
+
+    // 작성일 기준 분석 통계 계산
+    let dateAnalysis = undefined;
+    if (content.contentItems && content.contentItems.length > 0) {
+      const categorized = categorizeDateRanges(content.contentItems);
+      dateAnalysis = {
+        total: content.contentItems.length,
+        threeMonths: categorized.threeMonths.length,
+        oneYear: categorized.oneYear.length,
+        twoYears: categorized.twoYears.length,
+        older: categorized.older.length,
+        noDate: categorized.noDate.length,
+      };
+    }
+
+    // 긍부정평가 개수 계산
+    let contentSentimentCounts = undefined;
+    if (content.contentItems && content.contentItems.length > 0) {
+      const pos = content.contentItems.filter(i => i.sentiment === 'positive').length;
+      const neg = content.contentItems.filter(i => i.sentiment === 'negative').length;
+      const neu = content.contentItems.filter(i => i.sentiment === 'neutral').length;
+      contentSentimentCounts = { positive: pos, negative: neg, neutral: neu, total: pos + neg + neu };
+    }
+
     return {
       keywords: content.keywords?.slice(0, 15) || [],
       sentiment: content.sentiment,
       contentType: content.contentType,
-      // contentItems는 제외 (데이터 크기 축소)
+      dateAnalysis,  // 날짜 통계만 포함 (contentItems 원본은 제외)
+      contentSentimentCounts,  // 긍부정평가 개수
     };
   };
 
@@ -3869,6 +3961,7 @@ export default function IntegratedAnalysisPage() {
           {currentStep === 5 && analysisState.integratedReport ? (
             <IntegratedReport
               report={analysisState.integratedReport}
+              keywordType={analysisState.keywordType}
               onBack={() => setCurrentStep(4)}
               onRegenerate={handleRegenerateReport}
               pptLoading={pptLoading}

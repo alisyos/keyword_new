@@ -53,7 +53,7 @@ export default async function handler(
     const dataSummary = buildDataSummary(keyword, keywordType, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
 
     // GPT를 사용하여 종합 리포트 생성
-    const report = await generateIntegratedReport(keyword, keywordType, companyName, dataSummary, keywordExpansion, contentAnalysis, shoppingAnalysis);
+    const report = await generateIntegratedReport(keyword, keywordType, companyName, dataSummary, keywordExpansion, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
 
     res.status(200).json({ report });
   } catch (error) {
@@ -83,6 +83,293 @@ function calculateMobileShare(keywordExpansion: KeywordExpansionResult): number 
   });
   const total = totalPc + totalMobile;
   return total > 0 ? Math.round((totalMobile / total) * 100) : 0;
+}
+
+// ===== 사전 계산 지표 (PreMetrics) =====
+
+interface PreMetrics {
+  // 공통
+  totalVolume: number;
+  mobileShare: number;
+  keywordCount: number;
+  avgMobileCtr: string;
+  dominantCompIdx: string;
+  avgPositive: number;
+  avgNegative: number;
+  // 쇼핑
+  shopping?: {
+    totalRevenue: number;
+    averagePrice: number;
+    totalReviews: number;
+    averageRating: number;
+    topSellerName: string;
+    topSellerRevenue: number;
+    topRevenueRange: string;
+    platformLabel: string;
+    sellerCount: number;
+  };
+  // 브랜드
+  brand?: {
+    ownBrandName: string;
+    ownSearchVolume: number;
+    competitorCount: number;
+    sov: number;
+    ownPositive: number;
+    ownNegative: number;
+    sentimentGap: number;
+    bestCompetitorName: string;
+    ownKeywordCount: number;
+    totalBrandVolume: number;
+    competitors: Array<{ name: string; searchVolume: number; positive: number; negative: number }>;
+  };
+  // 일반 (광고)
+  adRank?: number;
+}
+
+function calculatePreMetrics(
+  keywordType: KeywordType,
+  keywordExpansion: KeywordExpansionResult,
+  contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
+  adAnalysis?: AdAnalysisResult,
+  shoppingAnalysis?: ShoppingSearchAnalysisResult,
+  brandComparison?: BrandComparisonResult
+): PreMetrics {
+  const totalVolume = calculateTotalSearchVolume(keywordExpansion);
+  const mobileShare = calculateMobileShare(keywordExpansion);
+  const keywordCount = keywordExpansion.keywordList?.length || 0;
+
+  // 평균 모바일 CTR (상위 10개)
+  let avgMobileCtr = '-';
+  if (keywordExpansion.keywordList?.length > 0) {
+    const top10 = keywordExpansion.keywordList.slice(0, 10);
+    const validCtrs = top10
+      .map(k => k.monthlyAveMobileCtr)
+      .filter(c => c !== '< 10' && c !== '-' && c !== '')
+      .map(c => parseFloat(c));
+    if (validCtrs.length > 0) {
+      avgMobileCtr = (validCtrs.reduce((s, v) => s + v, 0) / validCtrs.length).toFixed(1) + '%';
+    }
+  }
+
+  // 가장 빈번한 경쟁도
+  let dominantCompIdx = '중간';
+  if (keywordExpansion.keywordList?.length > 0) {
+    const highComp = keywordExpansion.keywordList.filter(k => k.compIdx === '높음').length;
+    const midComp = keywordExpansion.keywordList.filter(k => k.compIdx === '중간').length;
+    const lowComp = keywordExpansion.keywordList.filter(k => k.compIdx === '낮음').length;
+    if (highComp >= midComp && highComp >= lowComp) dominantCompIdx = '높음';
+    else if (lowComp >= midComp && lowComp >= highComp) dominantCompIdx = '낮음';
+  }
+
+  // 전체 감성 평균
+  const channels: ContentType[] = ['blog', 'cafe', 'youtube', 'news'];
+  let totalPositive = 0, totalNegative = 0, channelCount = 0;
+  channels.forEach(ch => {
+    const data = contentAnalysis[ch];
+    if (data?.sentiment) {
+      totalPositive += data.sentiment.positive;
+      totalNegative += data.sentiment.negative;
+      channelCount++;
+    }
+  });
+  const avgPositive = channelCount > 0 ? Math.round(totalPositive / channelCount) : 0;
+  const avgNegative = channelCount > 0 ? Math.round(totalNegative / channelCount) : 0;
+
+  const metrics: PreMetrics = {
+    totalVolume, mobileShare, keywordCount, avgMobileCtr, dominantCompIdx,
+    avgPositive, avgNegative,
+  };
+
+  // 광고 순위
+  if (adAnalysis && adAnalysis.ourAd.rank > 0) {
+    metrics.adRank = adAnalysis.ourAd.rank;
+  }
+
+  // 쇼핑 지표 계산
+  if (keywordType === 'shopping' && shoppingAnalysis) {
+    const gpt = shoppingAnalysis.gptAnalysis;
+    const isDual = shoppingAnalysis.sources.length === 2;
+    // 사용할 플랫폼 데이터 결정
+    const platforms: ShoppingPlatformData[] = [];
+    if (isDual && gpt.naver) platforms.push(gpt.naver);
+    if (isDual && gpt.coupang) platforms.push(gpt.coupang);
+    if (!isDual && gpt.combined) platforms.push(gpt.combined);
+
+    let totalRevenue = 0, totalReviews = 0, totalProducts = 0;
+    let sumPrice = 0, sumRating = 0, platformCount = 0;
+    let topSellerName = '-', topSellerRevenue = 0;
+    let topRevenueRange = '-', topRevenueValue = 0;
+
+    platforms.forEach(p => {
+      totalRevenue += p.overall.estimatedRevenue;
+      totalReviews += p.overall.totalReviews;
+      totalProducts += p.overall.totalProducts;
+      sumPrice += p.overall.averagePrice;
+      sumRating += p.overall.averageRating;
+      platformCount++;
+
+      if (p.sellers.topSellers.length > 0) {
+        const topSeller = p.sellers.topSellers[0];
+        if (topSeller.estimatedRevenue > topSellerRevenue) {
+          topSellerName = topSeller.seller;
+          topSellerRevenue = topSeller.estimatedRevenue;
+        }
+      }
+
+      p.priceRanges.priceRanges.forEach(pr => {
+        if (pr.estimatedRevenue > topRevenueValue) {
+          topRevenueValue = pr.estimatedRevenue;
+          topRevenueRange = pr.range;
+        }
+      });
+    });
+
+    const sourceLabel = shoppingAnalysis.sources.length === 2
+      ? '네이버 쇼핑 + 쿠팡'
+      : shoppingAnalysis.sources.includes('coupang') ? '쿠팡' : '네이버 쇼핑';
+
+    metrics.shopping = {
+      totalRevenue,
+      averagePrice: platformCount > 0 ? Math.round(sumPrice / platformCount) : 0,
+      totalReviews,
+      averageRating: platformCount > 0 ? parseFloat((sumRating / platformCount).toFixed(1)) : 0,
+      topSellerName,
+      topSellerRevenue,
+      topRevenueRange,
+      platformLabel: sourceLabel,
+      sellerCount: platforms.reduce((sum, p) => sum + p.sellers.topSellers.length, 0),
+    };
+  }
+
+  // 브랜드 지표 계산
+  if (keywordType === 'brand' && brandComparison) {
+    const ownBrand = brandComparison.ownBrand;
+    const calcBrandSearchVolume = (brand: BrandComparisonData): number => {
+      if (!brand.keywordExpansion?.keywordList) return 0;
+      return brand.keywordExpansion.keywordList.reduce((sum, kw) => {
+        const pc = kw.monthlyPcQcCnt === '< 10' ? 5 : parseInt(kw.monthlyPcQcCnt) || 0;
+        const mobile = kw.monthlyMobileQcCnt === '< 10' ? 5 : parseInt(kw.monthlyMobileQcCnt) || 0;
+        return sum + pc + mobile;
+      }, 0);
+    };
+
+    const calcBrandSentiment = (brand: BrandComparisonData): { positive: number; negative: number } => {
+      const chs = ['blog', 'cafe', 'youtube', 'news'] as const;
+      let pos = 0, neg = 0, cnt = 0;
+      chs.forEach(ch => {
+        const d = brand.contentAnalysis?.[ch];
+        if (d?.sentiment) {
+          pos += d.sentiment.positive || 0;
+          neg += d.sentiment.negative || 0;
+          cnt++;
+        }
+      });
+      return { positive: cnt > 0 ? Math.round(pos / cnt) : 0, negative: cnt > 0 ? Math.round(neg / cnt) : 0 };
+    };
+
+    const ownVolume = calcBrandSearchVolume(ownBrand);
+    const ownSentiment = calcBrandSentiment(ownBrand);
+    const ownKeywordCount = ownBrand.keywordExpansion?.keywordList?.length || 0;
+
+    const competitorData = brandComparison.competitors.map(comp => {
+      const vol = calcBrandSearchVolume(comp);
+      const sent = calcBrandSentiment(comp);
+      return { name: comp.brandKeyword, searchVolume: vol, positive: sent.positive, negative: sent.negative };
+    });
+
+    const totalBrandVolume = ownVolume + competitorData.reduce((s, c) => s + c.searchVolume, 0);
+    const sov = totalBrandVolume > 0 ? parseFloat(((ownVolume / totalBrandVolume) * 100).toFixed(1)) : 0;
+
+    const bestCompetitor = competitorData.length > 0
+      ? competitorData.reduce((best, c) => c.positive > best.positive ? c : best, competitorData[0])
+      : null;
+    const sentimentGap = bestCompetitor ? parseFloat((ownSentiment.positive - bestCompetitor.positive).toFixed(1)) : 0;
+
+    metrics.brand = {
+      ownBrandName: ownBrand.brandKeyword,
+      ownSearchVolume: ownVolume,
+      competitorCount: brandComparison.competitors.length,
+      sov,
+      ownPositive: ownSentiment.positive,
+      ownNegative: ownSentiment.negative,
+      sentimentGap,
+      bestCompetitorName: bestCompetitor?.name || '-',
+      ownKeywordCount,
+      totalBrandVolume,
+      competitors: competitorData,
+    };
+  }
+
+  return metrics;
+}
+
+// ===== 유형별 핵심 수치 섹션 =====
+
+function buildKeyMetricsSection(keywordType: KeywordType, metrics: PreMetrics): string {
+  if (keywordType === 'shopping' && metrics.shopping) {
+    const s = metrics.shopping;
+    return `=== 핵심 수치 (이커머스) ===
+- 총 추정 매출액: ${s.totalRevenue.toLocaleString()}원
+- 평균 상품 가격: ${s.averagePrice.toLocaleString()}원
+- 총 리뷰 수: ${s.totalReviews.toLocaleString()}개
+- 평균 평점: ${s.averageRating}
+- TOP 판매자 1위: ${s.topSellerName} (매출 추정 ${s.topSellerRevenue.toLocaleString()}원)
+- 최고 매출 가격대: ${s.topRevenueRange}
+- 분석 플랫폼: ${s.platformLabel}
+- 총 월간 검색량: ${metrics.totalVolume.toLocaleString()}건
+- 모바일 비중: ${metrics.mobileShare}%`;
+  }
+
+  if (keywordType === 'brand' && metrics.brand) {
+    const b = metrics.brand;
+    return `=== 핵심 수치 (브랜드 비교) ===
+- 자사 브랜드(${b.ownBrandName}) 검색량: ${b.ownSearchVolume.toLocaleString()}건
+- 경쟁사 수: ${b.competitorCount}개 브랜드
+- 자사 SOV (검색 점유율): ${b.sov}%
+- 자사 감성: 긍정 ${b.ownPositive}%, 부정 ${b.ownNegative}%
+- 감성 격차: 자사 vs 최고 경쟁사(${b.bestCompetitorName}) ${b.sentimentGap > 0 ? '+' : ''}${b.sentimentGap}%p
+- 자사 연관 키워드: ${b.ownKeywordCount}개
+- 전체 브랜드 합산 검색량: ${b.totalBrandVolume.toLocaleString()}건`;
+  }
+
+  // general
+  let section = `=== 핵심 수치 ===
+- 총 월간 검색량: ${metrics.totalVolume.toLocaleString()}건
+- 모바일 비중: ${metrics.mobileShare}%
+- 분석된 연관 키워드: ${metrics.keywordCount}개
+- 평균 모바일 CTR: ${metrics.avgMobileCtr}
+- 주요 경쟁도: ${metrics.dominantCompIdx}
+- 전체 감성: 긍정 ${metrics.avgPositive}%, 부정 ${metrics.avgNegative}%`;
+  if (metrics.adRank) {
+    section += `\n- 자사 광고 순위: ${metrics.adRank}위`;
+  }
+  return section;
+}
+
+// ===== 데이터 → 리포트 매핑 가이드 =====
+
+function buildDataMappingGuide(keywordType: KeywordType): string {
+  if (keywordType === 'shopping') {
+    return `=== 데이터 → 리포트 매핑 ===
+- "쇼핑 검색 분석 > 전체 분석" → executiveSummary.keyMetrics
+- "쇼핑 검색 분석 > TOP 판매자" → marketEnvironment.competitionAnalysis.keyPlayers + insight
+- "쇼핑 검색 분석 > 가격대 분석" → actionStrategies[1] (가격 경쟁력 전략)
+- "채널별 콘텐츠 분석" → channelBreakdown (감성 수치 반영)`;
+  }
+
+  if (keywordType === 'brand') {
+    return `=== 데이터 → 리포트 매핑 ===
+- "브랜드 비교 > 자사 브랜드" → executiveSummary.keyMetrics (SOV, 검색량)
+- "브랜드 비교 > 경쟁사" → marketEnvironment.competitionAnalysis
+- "브랜드 경쟁 구도 요약" → keywordMap.dataInsights
+- 자사 vs 경쟁사 감성 차이 → perceptionStages.stage2_comparison`;
+  }
+
+  // general
+  return `=== 데이터 → 리포트 매핑 ===
+- 키워드 확장 데이터 → executiveSummary.keyMetrics (검색량, CTR, 경쟁도)
+- 광고 분석 데이터 → actionStrategies (광고 순위, 경쟁사 분석)
+- 채널별 콘텐츠 분석 → channelBreakdown (감성 수치 반영)`;
 }
 
 // 분석 데이터 요약 생성
@@ -183,6 +470,16 @@ function buildDataSummary(
       // 콘텐츠 수
       if (data.contentItems) {
         summary += `- 분석된 콘텐츠 수: ${data.contentItems.length}개\n`;
+      }
+
+      // 작성일 기준 분석
+      if ((data as any).dateAnalysis) {
+        const da = (data as any).dateAnalysis;
+        const dated = da.threeMonths + da.oneYear + da.twoYears + da.older;
+        if (dated > 0) {
+          const pct = (n: number) => Math.round(n / dated * 100);
+          summary += `- 작성일 분포 (총 ${dated}개): 최근 3개월 ${da.threeMonths}개(${pct(da.threeMonths)}%), 3개월~1년 ${da.oneYear}개(${pct(da.oneYear)}%), 1년~2년 ${da.twoYears}개(${pct(da.twoYears)}%), 2년 이상 ${da.older}개(${pct(da.older)}%)\n`;
+        }
       }
 
       summary += '\n';
@@ -296,6 +593,18 @@ function buildDataSummary(
       if (channelCount > 0) {
         summary += `- 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
       }
+      // 자사 브랜드 작성일 분포
+      channels.forEach(ch => {
+        const data = ownBrand.contentAnalysis?.[ch] as any;
+        if (data?.dateAnalysis) {
+          const da = data.dateAnalysis;
+          const dated = da.threeMonths + da.oneYear + da.twoYears + da.older;
+          if (dated > 0) {
+            const pct = (n: number) => Math.round(n / dated * 100);
+            summary += `- ${ch} 작성일 분포 (${dated}개): 최근3개월 ${da.threeMonths}개(${pct(da.threeMonths)}%), 3개월~1년 ${da.oneYear}개(${pct(da.oneYear)}%), 1~2년 ${da.twoYears}개(${pct(da.twoYears)}%), 2년+ ${da.older}개(${pct(da.older)}%)\n`;
+          }
+        }
+      });
     }
 
     // 경쟁사 브랜드들
@@ -324,6 +633,18 @@ function buildDataSummary(
         if (channelCount > 0) {
           summary += `   - 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
         }
+        // 경쟁사 브랜드 작성일 분포
+        channels.forEach(ch => {
+          const data = comp.contentAnalysis?.[ch] as any;
+          if (data?.dateAnalysis) {
+            const da = data.dateAnalysis;
+            const dated = da.threeMonths + da.oneYear + da.twoYears + da.older;
+            if (dated > 0) {
+              const pct = (n: number) => Math.round(n / dated * 100);
+              summary += `   - ${ch} 작성일 분포 (${dated}개): 최근3개월 ${da.threeMonths}개(${pct(da.threeMonths)}%), 3개월~1년 ${da.oneYear}개(${pct(da.oneYear)}%), 1~2년 ${da.twoYears}개(${pct(da.twoYears)}%), 2년+ ${da.older}개(${pct(da.older)}%)\n`;
+            }
+          }
+        });
       }
     });
 
@@ -340,6 +661,544 @@ function buildDataSummary(
   return summary;
 }
 
+// 유형별 섹션 설명 반환
+function getTypeSpecificSections(keywordType: KeywordType): string {
+  const commonSections = `
+1. **Executive Summary** (핵심 요약)
+   - 5개의 핵심 지표 (구체적 수치 포함)
+   - 승리 공식 (Winning Formula) - 성공을 위한 핵심 전략 한 문장
+   - 시장 기회 요약
+
+3. **핵심 키워드 맵**
+   - 상위 키워드 랭킹 (빈도 기반)
+   - Pain Point 키워드 분리
+   - 데이터 기반 인사이트 3개
+
+4. **채널별 소비자 반응**
+   - 각 채널의 역할 정의
+   - 채널별 핵심 관심사
+   - 채널별 마케팅 전략
+
+6. **마케팅 인사이트** (4개)
+   - 각 인사이트는 Pain Point → Opportunity → Action 구조
+
+8. **90일 액션플랜**
+   - Key Findings (4개)
+   - 타임라인: NOW → 30일 → 60일 → 90일
+
+9. **종합 결론**
+   - 요약
+   - 핵심 추천사항`;
+
+  if (keywordType === 'shopping') {
+    return commonSections + `
+
+2. **3단계 구매 여정** (쇼핑 특화)
+   - Stage 1 (상품 발견): 소비자가 상품을 어떻게 발견하는지 (검색어, 카테고리 진입 등)
+   - Stage 2 (가격/판매자 비교): 가격, 판매자 신뢰도, 리뷰를 비교하는 행동
+   - Stage 3 (구매 결정 장벽): 구매를 망설이게 하는 요인 (가격 불만, 품질 우려, 배송 불안)
+
+5. **이커머스 시장 환경 분석**
+   - 판매자 경쟁 구도 (TOP 셀러 점유율, 가격 경쟁 현황)
+   - 쇼핑 플랫폼 트렌드 (네이버 쇼핑 vs 쿠팡, 모바일 쇼핑 비중)
+
+7. **실행 전략** (이커머스 5대 전략)
+   - 전략 1: 상품 리스팅 최적화 (상품명/이미지/상세페이지)
+   - 전략 2: 가격 경쟁력 전략 (포지셔닝/할인)
+   - 전략 3: 리뷰/평점 관리 전략
+   - 전략 4: 쇼핑 플랫폼별 최적화 (네이버 쇼핑 SEO/쿠팡 로켓)
+   - 전략 5: 멀티채널 판매 최적화`;
+  }
+
+  if (keywordType === 'brand') {
+    return commonSections + `
+
+2. **3단계 브랜드 인식 구조** (브랜드 특화)
+   - Stage 1 (브랜드 인지): 소비자가 브랜드를 어떻게 인식하는지 (검색량, 연관 이미지)
+   - Stage 2 (브랜드 비교): 경쟁 브랜드와 비교하는 행동 (SOV, 감성 격차)
+   - Stage 3 (브랜드 전환 장벽): 브랜드 전환을 막는 요인 (충성도, 전환 비용)
+
+5. **브랜드 경쟁 환경 분석**
+   - 브랜드 경쟁 구도 (SOV 비교, 감성 비교, 강약점 분석)
+   - 브랜드 디지털 트렌드 (검색량 추이, 콘텐츠 점유율)
+
+7. **실행 전략** (브랜드 5대 전략)
+   - 전략 1: 브랜드 SOV 확대 전략
+   - 전략 2: 브랜드 콘텐츠 차별화 (스토리텔링/포지셔닝)
+   - 전략 3: 경쟁 방어 전략 (자사 키워드 보호)
+   - 전략 4: 브랜드 인식 개선 (감성 격차 해소)
+   - 전략 5: 브랜드 전환 유도 (경쟁사 고객 획득)`;
+  }
+
+  // general (기본)
+  return commonSections + `
+
+2. **3단계 소비자 인식 구조**
+   - Stage 1 (검색 의도 인지): 소비자가 키워드를 어떻게 인식하는지
+   - Stage 2 (적극적 비교): 구매 의사결정을 위한 비교 행동
+   - Stage 3 (전환 장벽): 구매를 막는 Pain Points
+
+5. **시장 환경 분석**
+   - 경쟁 구도 분석
+   - 디지털 트렌드 (모바일 비중, 콘텐츠 동향)
+
+7. **실행 전략** (5대 전략)
+   - 전략 1: 콘텐츠 마케팅 (SEO 기반 키워드 타겟팅)
+   - 전략 2: 모바일 퍼널 최적화
+   - 전략 3: 차별화된 비교 경험 제공
+   - 전략 4: 검색 광고 최적화 (입찰/카피)
+   - 전략 5: 프로모션 캠페인 설계`;
+}
+
+// 유형별 JSON 예시 템플릿 반환
+function getTypeSpecificJsonTemplate(keywordType: KeywordType, metrics: PreMetrics): string {
+  const totalVolume = metrics.totalVolume;
+  const mobileShare = metrics.mobileShare;
+  // 공통 JSON 구조 (channelBreakdown, marketingInsights, conclusion)
+  const commonChannelBreakdown = `"channelBreakdown": [
+    {
+      "channel": "blog",
+      "channelName": "블로그",
+      "role": "정보 탐색 중심",
+      "keyInterests": ["실용 정보 선호", "할인 팁"],
+      "strategy": "5분 완성 가이드 등 실용형 콘텐츠 배포",
+      "sentimentBreakdown": {"positive": 60, "negative": 15, "neutral": 25}
+    }
+  ]`;
+
+  const commonMarketingInsights = `"marketingInsights": [
+    {
+      "id": 1,
+      "title": "인사이트 제목",
+      "painPoint": {
+        "label": "Pain Point 요약",
+        "details": ["상세 내용1", "상세 내용2"]
+      },
+      "opportunity": {
+        "label": "Opportunity 요약",
+        "details": ["상세 내용1", "상세 내용2"]
+      },
+      "action": "실행 권고 사항"
+    }
+  ]`;
+
+  const commonConclusion = `"conclusion": {
+    "summary": "종합 결론 요약 (2-3문장)",
+    "recommendations": [
+      "핵심 추천사항 1",
+      "핵심 추천사항 2",
+      "핵심 추천사항 3"
+    ]
+  },
+  "contentDateAnalysis": {
+    "overall": "전체 채널 콘텐츠 작성일 분포 요약 (예: 최근 3개월 콘텐츠가 40%로 활발한 시장, 또는 1년 이상 콘텐츠가 60%로 정보 갱신 필요 등)",
+    "channels": [
+      {
+        "channel": "blog",
+        "channelName": "블로그",
+        "summary": "채널별 작성일 특성 요약 (데이터 기반)",
+        "distribution": {"threeMonths": 0, "oneYear": 0, "twoYears": 0, "older": 0}
+      }
+    ]
+  }`;
+
+  if (keywordType === 'shopping') {
+    const s = metrics.shopping;
+    return `{
+  "executiveSummary": {
+    "keyMetrics": [
+      {"label": "총 추정 매출액", "value": "${s ? s.totalRevenue.toLocaleString() + '원' : '분석 데이터 기반 수치'}", "description": "시장 규모 지표"},
+      {"label": "평균 상품 가격", "value": "${s ? s.averagePrice.toLocaleString() + '원' : '수치'}", "description": "가격 포지셔닝 기준"},
+      {"label": "총 리뷰 수", "value": "${s ? s.totalReviews.toLocaleString() + '개' : '수치'}", "description": "시장 활성도"},
+      {"label": "평균 평점", "value": "${s ? s.averageRating + '점' : '수치'}", "description": "소비자 만족도"},
+      {"label": "TOP 판매자", "value": "${s ? s.sellerCount + '개 셀러' : '수치'}", "description": "경쟁 집중도"}
+    ],
+    "winningFormula": "이커머스 성공 전략 (예: '리스팅 최적화 + 리뷰 관리 + 가격 포지셔닝')",
+    "marketOpportunity": "이커머스 시장 기회 요약 (2-3문장)"
+  },
+  "perceptionStages": {
+    "stage1_awareness": {
+      "title": "상품 발견",
+      "insight": "소비자가 상품을 발견하는 경로와 검색 패턴",
+      "keywords": ["상품 발견 관련 키워드1", "키워드2"],
+      "metrics": "관련 검색량 수치"
+    },
+    "stage2_comparison": {
+      "title": "가격/판매자 비교",
+      "insight": "가격, 리뷰, 판매자 신뢰도 비교 행동",
+      "keywords": ["가격비교", "리뷰"],
+      "metrics": "비교 관련 수치"
+    },
+    "stage3_conversion": {
+      "title": "구매 결정 장벽",
+      "insight": "구매를 망설이게 하는 요인",
+      "painPoints": ["가격 불만", "품질 우려", "배송 불안"],
+      "sentiment": "감성 분석 결과"
+    }
+  },
+  "keywordMap": {
+    "totalSearchVolume": "${totalVolume.toLocaleString()}건",
+    "topKeywords": [
+      {"rank": 1, "keyword": "구매 의도 키워드", "frequency": 54}
+    ],
+    "painPointKeywords": [
+      {"keyword": "가격 불만 키워드", "frequency": 5},
+      {"keyword": "품질 우려 키워드", "frequency": 3}
+    ],
+    "dataInsights": [
+      "가격대별 시장 세분화 인사이트",
+      "리뷰/평점과 매출 상관관계 인사이트",
+      "구매 전환 의도 키워드 인사이트"
+    ]
+  },
+  ${commonChannelBreakdown},
+  "marketEnvironment": {
+    "competitionAnalysis": {
+      "level": "높음",
+      "insight": "판매자 경쟁 구도 분석 (TOP 셀러 점유율, 가격 경쟁 현황)",
+      "keyPlayers": ["TOP 판매자1", "TOP 판매자2"]
+    },
+    "digitalTrends": {
+      "mobileShare": "${mobileShare}%",
+      "contentFreshness": "채널별 작성일 분포 데이터를 기반으로 콘텐츠 신선도 + 쇼핑 플랫폼 트렌드 요약",
+      "orgChanges": ["모바일 쇼핑 트렌드", "플랫폼별 변화"]
+    }
+  },
+  ${commonMarketingInsights},
+  "actionStrategies": [
+    {
+      "id": 1,
+      "title": "상품 리스팅 최적화",
+      "subtitle": "상품명/이미지/상세페이지 최적화",
+      "sections": [
+        {"heading": "상품명 최적화", "items": ["키워드 포함 상품명", "검색 노출 전략"]},
+        {"heading": "상세페이지 개선", "items": ["구매 전환율 향상 요소"]}
+      ],
+      "expectedMetrics": [{"label": "예상 노출 증가", "value": "수치"}]
+    },
+    {
+      "id": 2,
+      "title": "가격 경쟁력 전략",
+      "subtitle": "가격 포지셔닝 및 할인 전략",
+      "sections": [
+        {"heading": "가격 포지셔닝", "items": ["적정 가격대 분석"]},
+        {"heading": "할인/프로모션", "items": ["할인 전략"]}
+      ],
+      "expectedMetrics": [{"label": "예상 전환율", "value": "수치"}]
+    },
+    {
+      "id": 3,
+      "title": "리뷰/평점 관리 전략",
+      "subtitle": "리뷰 확보 및 평점 관리",
+      "sections": [
+        {"heading": "리뷰 확보 전략", "items": ["리뷰 요청 방법"]},
+        {"heading": "부정 리뷰 대응", "items": ["대응 전략"]}
+      ],
+      "expectedMetrics": [{"label": "목표 리뷰 수", "value": "수치"}]
+    },
+    {
+      "id": 4,
+      "title": "쇼핑 플랫폼별 최적화",
+      "subtitle": "네이버 쇼핑 SEO / 쿠팡 로켓 전략",
+      "sections": [
+        {"heading": "네이버 쇼핑 SEO", "items": ["네이버 최적화 전략"]},
+        {"heading": "쿠팡 전략", "items": ["쿠팡 로켓 활용"]}
+      ],
+      "expectedMetrics": [{"label": "예상 순위 상승", "value": "수치"}]
+    },
+    {
+      "id": 5,
+      "title": "멀티채널 판매 최적화",
+      "subtitle": "다중 플랫폼 판매 확장",
+      "sections": [
+        {"heading": "채널 확장", "items": ["플랫폼별 입점 전략"]},
+        {"heading": "재고/물류 최적화", "items": ["통합 관리 방안"]}
+      ],
+      "expectedMetrics": [{"label": "예상 매출 증가", "value": "수치"}]
+    }
+  ],
+  "actionPlan": {
+    "keyFindings": [
+      "리스팅 최적화가 매출 직결",
+      "리뷰/평점이 구매 전환의 핵심",
+      "가격 포지셔닝 재조정 필요",
+      "멀티 플랫폼 진출로 매출 확대 기회"
+    ],
+    "timeline": [
+      {"phase": "NOW", "label": "리스팅 감사 착수", "category": "AUDIT", "action": "현재 상품 리스팅 전수 점검 및 개선점 도출"},
+      {"phase": "30d", "label": "리뷰 캠페인 실행", "category": "REVIEW", "action": "리뷰 확보 캠페인 및 평점 관리 시스템 구축"},
+      {"phase": "60d", "label": "가격 최적화 실행", "category": "PRICING", "action": "경쟁 가격 모니터링 및 동적 가격 전략 적용"},
+      {"phase": "90d", "label": "멀티플랫폼 확장", "category": "SCALE-UP", "action": "신규 플랫폼 입점 및 통합 재고 관리 체계 구축"}
+    ]
+  },
+  ${commonConclusion}
+}`;
+  }
+
+  if (keywordType === 'brand') {
+    const b = metrics.brand;
+    return `{
+  "executiveSummary": {
+    "keyMetrics": [
+      {"label": "자사 브랜드 검색량", "value": "${b ? b.ownSearchVolume.toLocaleString() + '건' : '분석 데이터 기반 수치'}", "description": "브랜드 인지도"},
+      {"label": "브랜드 SOV", "value": "${b ? b.sov + '%' : '수치'}", "description": "검색 점유율"},
+      {"label": "감성 격차", "value": "${b ? (b.sentimentGap > 0 ? '+' : '') + b.sentimentGap + '%p' : '수치'}", "description": "자사 vs 최고 경쟁사"},
+      {"label": "경쟁사 수", "value": "${b ? b.competitorCount + '개 브랜드' : '수치'}", "description": "브랜드 경쟁 강도"},
+      {"label": "자사 연관 키워드", "value": "${b ? b.ownKeywordCount + '개' : '수치'}", "description": "브랜드 연상 강도"}
+    ],
+    "winningFormula": "브랜드 성공 전략 (예: 'SOV 확대 + 감성 격차 해소 + 경쟁 방어')",
+    "marketOpportunity": "브랜드 시장 기회 요약 (2-3문장)"
+  },
+  "perceptionStages": {
+    "stage1_awareness": {
+      "title": "브랜드 인지",
+      "insight": "소비자가 브랜드를 인식하는 방식과 연관 이미지",
+      "keywords": ["브랜드 인지 관련 키워드1", "키워드2"],
+      "metrics": "브랜드 검색량 수치"
+    },
+    "stage2_comparison": {
+      "title": "브랜드 비교",
+      "insight": "경쟁 브랜드와의 비교 행동 및 SOV 분석",
+      "keywords": ["브랜드비교", "vs"],
+      "metrics": "SOV 관련 수치"
+    },
+    "stage3_conversion": {
+      "title": "브랜드 전환 장벽",
+      "insight": "브랜드 전환을 막는 요인",
+      "painPoints": ["충성도 장벽", "전환 비용", "인식 차이"],
+      "sentiment": "브랜드별 감성 분석 결과"
+    }
+  },
+  "keywordMap": {
+    "totalSearchVolume": "${totalVolume.toLocaleString()}건",
+    "topKeywords": [
+      {"rank": 1, "keyword": "브랜드별 키워드", "frequency": 54}
+    ],
+    "painPointKeywords": [
+      {"keyword": "부정 인식 키워드", "frequency": 5},
+      {"keyword": "브랜드 불만 키워드", "frequency": 3}
+    ],
+    "dataInsights": [
+      "자사 vs 경쟁사 키워드 랭킹 비교 인사이트",
+      "브랜드 연관 이미지 분석 인사이트",
+      "브랜드 전환 의도 키워드 인사이트"
+    ]
+  },
+  ${commonChannelBreakdown},
+  "marketEnvironment": {
+    "competitionAnalysis": {
+      "level": "높음",
+      "insight": "브랜드 경쟁 구도 분석 (SOV 비교, 감성 비교, 강약점)",
+      "keyPlayers": ["경쟁 브랜드1", "경쟁 브랜드2"]
+    },
+    "digitalTrends": {
+      "mobileShare": "${mobileShare}%",
+      "contentFreshness": "채널별 작성일 분포 데이터를 기반으로 콘텐츠 신선도 + 브랜드 콘텐츠 트렌드 요약",
+      "orgChanges": ["브랜드 디지털 트렌드", "검색량 추이 변화"]
+    }
+  },
+  ${commonMarketingInsights},
+  "actionStrategies": [
+    {
+      "id": 1,
+      "title": "브랜드 SOV 확대 전략",
+      "subtitle": "검색 점유율 확대를 통한 인지도 강화",
+      "sections": [
+        {"heading": "SOV 확대 방안", "items": ["콘텐츠 확대", "키워드 점유"]},
+        {"heading": "인지도 강화", "items": ["브랜드 검색량 증가 전략"]}
+      ],
+      "expectedMetrics": [{"label": "목표 SOV", "value": "수치"}]
+    },
+    {
+      "id": 2,
+      "title": "브랜드 콘텐츠 차별화",
+      "subtitle": "스토리텔링과 포지셔닝 강화",
+      "sections": [
+        {"heading": "스토리텔링 전략", "items": ["브랜드 스토리 구축"]},
+        {"heading": "포지셔닝 강화", "items": ["차별화 포인트"]}
+      ],
+      "expectedMetrics": [{"label": "콘텐츠 도달률", "value": "수치"}]
+    },
+    {
+      "id": 3,
+      "title": "경쟁 방어 전략",
+      "subtitle": "자사 브랜드 키워드 보호",
+      "sections": [
+        {"heading": "키워드 방어", "items": ["자사 키워드 보호 전략"]},
+        {"heading": "경쟁사 견제", "items": ["경쟁 대응 방안"]}
+      ],
+      "expectedMetrics": [{"label": "키워드 방어율", "value": "수치"}]
+    },
+    {
+      "id": 4,
+      "title": "브랜드 인식 개선",
+      "subtitle": "감성 격차 해소 전략",
+      "sections": [
+        {"heading": "긍정 인식 강화", "items": ["긍정 콘텐츠 확대"]},
+        {"heading": "부정 인식 대응", "items": ["부정 리뷰/콘텐츠 대응"]}
+      ],
+      "expectedMetrics": [{"label": "목표 긍정 비율", "value": "수치"}]
+    },
+    {
+      "id": 5,
+      "title": "브랜드 전환 유도",
+      "subtitle": "경쟁사 고객 획득 전략",
+      "sections": [
+        {"heading": "전환 유도 캠페인", "items": ["경쟁사 고객 타겟팅"]},
+        {"heading": "로열티 프로그램", "items": ["고객 유지 전략"]}
+      ],
+      "expectedMetrics": [{"label": "목표 전환율", "value": "수치"}]
+    }
+  ],
+  "actionPlan": {
+    "keyFindings": [
+      "브랜드 SOV 확대가 인지도의 핵심",
+      "감성 격차 해소가 전환의 열쇠",
+      "자사 키워드 방어 체계 구축 필수",
+      "경쟁사 고객 전환 기회 포착"
+    ],
+    "timeline": [
+      {"phase": "NOW", "label": "브랜드 모니터링 체계 구축", "category": "MONITOR", "action": "자사/경쟁사 브랜드 검색량 및 감성 실시간 추적 시작"},
+      {"phase": "30d", "label": "콘텐츠 캠페인 실행", "category": "CONTENT", "action": "브랜드 스토리텔링 콘텐츠 제작 및 배포"},
+      {"phase": "60d", "label": "경쟁 대응 전략 가동", "category": "DEFENSE", "action": "자사 키워드 방어 및 경쟁사 키워드 공략"},
+      {"phase": "90d", "label": "로열티 프로그램 론칭", "category": "LOYALTY", "action": "충성 고객 유지 및 경쟁사 고객 전환 프로그램 실행"}
+    ]
+  },
+  ${commonConclusion}
+}`;
+  }
+
+  // general (기본)
+  return `{
+  "executiveSummary": {
+    "keyMetrics": [
+      {"label": "월 핵심 키워드 검색량", "value": "${totalVolume.toLocaleString()}건", "description": "시장 성숙도 입증"},
+      {"label": "모바일 비중", "value": "${mobileShare}%", "description": "모바일 퍼널 최적화 필수"},
+      {"label": "광고 경쟁도", "value": "${metrics.dominantCompIdx}", "description": "입찰 전략 기준"},
+      {"label": "평균 모바일 CTR", "value": "${metrics.avgMobileCtr}", "description": "광고 효율 지표"},
+      {"label": "전체 감성 긍정률", "value": "${metrics.avgPositive}%", "description": "소비자 인식 수준"}
+    ],
+    "winningFormula": "성공을 위한 핵심 전략 (예: '비교 경험 단순화 + 모바일 퍼널 최적화')",
+    "marketOpportunity": "시장 기회 요약 (2-3문장)"
+  },
+  "perceptionStages": {
+    "stage1_awareness": {
+      "title": "검색 의도 인지",
+      "insight": "소비자의 기본 인식 설명",
+      "keywords": ["관련 키워드1", "관련 키워드2"],
+      "metrics": "관련 수치 (예: 월 검색량 30,000건)"
+    },
+    "stage2_comparison": {
+      "title": "적극적 비교",
+      "insight": "비교 행동 패턴 설명",
+      "keywords": ["비교", "견적"],
+      "metrics": "CTR 등 관련 수치"
+    },
+    "stage3_conversion": {
+      "title": "전환 장벽",
+      "insight": "구매를 막는 요인",
+      "painPoints": ["복잡함", "고민"],
+      "sentiment": "긍정 67% 등 감성 분석 결과"
+    }
+  },
+  "keywordMap": {
+    "totalSearchVolume": "${totalVolume.toLocaleString()}건",
+    "topKeywords": [
+      {"rank": 1, "keyword": "키워드", "frequency": 54}
+    ],
+    "painPointKeywords": [
+      {"keyword": "복잡", "frequency": 5}
+    ],
+    "dataInsights": [
+      "가격 vs 보장의 균형 - 인사이트 설명",
+      "편의성 수요 급증 - 인사이트 설명",
+      "구매 직전 의도 포착 - 인사이트 설명"
+    ]
+  },
+  ${commonChannelBreakdown},
+  "marketEnvironment": {
+    "competitionAnalysis": {
+      "level": "높음",
+      "insight": "경쟁 구도 상세 분석",
+      "keyPlayers": ["주요 경쟁사1", "주요 경쟁사2"]
+    },
+    "digitalTrends": {
+      "mobileShare": "${mobileShare}%",
+      "contentFreshness": "채널별 작성일 분포 데이터를 기반으로 콘텐츠 신선도 요약 (예: 최근 3개월 콘텐츠 XX%, 1년 이상 콘텐츠 XX%)",
+      "orgChanges": ["디지털 채널 강화 트렌드"]
+    }
+  },
+  ${commonMarketingInsights},
+  "actionStrategies": [
+    {
+      "id": 1,
+      "title": "콘텐츠 마케팅",
+      "subtitle": "SEO 기반 타겟 키워드 전략",
+      "sections": [
+        {"heading": "핵심 키워드 군", "items": ["키워드1", "키워드2"]},
+        {"heading": "틈새 키워드", "items": ["롱테일 키워드1"]}
+      ],
+      "expectedMetrics": [{"label": "예상 CTR", "value": "35%"}]
+    },
+    {
+      "id": 2,
+      "title": "모바일 퍼널 최적화",
+      "subtitle": "모바일 전환율 극대화",
+      "sections": [
+        {"heading": "모바일 UX 개선", "items": ["페이지 속도 최적화"]},
+        {"heading": "전환 퍼널 단순화", "items": ["CTA 최적화"]}
+      ],
+      "expectedMetrics": [{"label": "예상 전환율", "value": "수치"}]
+    },
+    {
+      "id": 3,
+      "title": "차별화된 비교 경험",
+      "subtitle": "경쟁사 대비 비교 우위 확보",
+      "sections": [
+        {"heading": "비교 콘텐츠", "items": ["비교표 제작"]},
+        {"heading": "신뢰 구축", "items": ["리뷰/사례 활용"]}
+      ],
+      "expectedMetrics": [{"label": "예상 이탈율 감소", "value": "수치"}]
+    },
+    {
+      "id": 4,
+      "title": "검색 광고 최적화",
+      "subtitle": "입찰/카피 전략 고도화",
+      "sections": [
+        {"heading": "입찰 전략", "items": ["키워드별 입찰가 최적화"]},
+        {"heading": "광고 카피", "items": ["A/B 테스트 계획"]}
+      ],
+      "expectedMetrics": [{"label": "예상 CPC 절감", "value": "수치"}]
+    },
+    {
+      "id": 5,
+      "title": "프로모션 캠페인 설계",
+      "subtitle": "시즌별 프로모션 전략",
+      "sections": [
+        {"heading": "프로모션 설계", "items": ["시즌 캠페인"]},
+        {"heading": "실행 계획", "items": ["캠페인 일정"]}
+      ],
+      "expectedMetrics": [{"label": "예상 ROI", "value": "수치"}]
+    }
+  ],
+  "actionPlan": {
+    "keyFindings": [
+      "비교 경험의 단순화가 핵심",
+      "모바일 퍼널 최적화 필수",
+      "브랜드 신뢰 × 투명 비교 공존",
+      "합리적 가치 제안 중요"
+    ],
+    "timeline": [
+      {"phase": "NOW", "label": "퍼널 지표 개선 착수", "category": "URGENT", "action": "이탈 마찰 요소 즉시 제거"},
+      {"phase": "30d", "label": "핵심 기능 MVP 론치", "category": "DEVELOP", "action": "AI 추천 로직 베타 오픈"},
+      {"phase": "60d", "label": "SEO 더블트랙 운영", "category": "MARKETING", "action": "대표 + 틈새 키워드 콘텐츠 배포"},
+      {"phase": "90d", "label": "시즌 캠페인 확대", "category": "SCALE-UP", "action": "데이터 기반 메시지로 집중 공략"}
+    ]
+  },
+  ${commonConclusion}
+}`;
+}
+
 // GPT를 사용하여 종합 리포트 생성
 async function generateIntegratedReport(
   keyword: string,
@@ -348,11 +1207,13 @@ async function generateIntegratedReport(
   dataSummary: string,
   keywordExpansion: KeywordExpansionResult,
   contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
-  shoppingAnalysis?: ShoppingSearchAnalysisResult
+  adAnalysis?: AdAnalysisResult,
+  shoppingAnalysis?: ShoppingSearchAnalysisResult,
+  brandComparison?: BrandComparisonResult
 ): Promise<IntegratedReportData> {
 
-  const totalVolume = calculateTotalSearchVolume(keywordExpansion);
-  const mobileShare = calculateMobileShare(keywordExpansion);
+  // 사전 지표 계산
+  const metrics = calculatePreMetrics(keywordType, keywordExpansion, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
 
   // 키워드 유형별 시스템 프롬프트 생성
   const getSystemPrompt = (type: KeywordType): string => {
@@ -393,51 +1254,47 @@ async function generateIntegratedReport(
     return basePrompt + typeSpecificPrompt[type];
   };
 
+  // 유형별 필수 데이터 참조 지침
+  const getDataReferenceGuide = (type: KeywordType): string => {
+    if (type === 'shopping') {
+      return `
+
+【필수 데이터 참조 지침】
+1. "쇼핑 검색 분석 데이터"의 총 매출액, 평균 가격, 리뷰 수, 평점을 Executive Summary keyMetrics에 그대로 인용
+2. TOP 판매자 이름/가격/매출을 marketEnvironment.competitionAnalysis에 구체적 언급
+3. 가격대별 상품 수/매출을 actionStrategies "가격 경쟁력 전략"에서 참조
+4. 네이버 vs 쿠팡 비교 데이터가 있으면 플랫폼별 차이를 digitalTrends에 명시
+5. 채널별 작성일 분포 데이터가 있으면 contentFreshness에 실제 수치 기반으로 반영하고, contentDateAnalysis에 채널별 분포와 요약을 정확히 작성
+수치를 임의 생성하지 말고, 제공된 실제 수치를 정확히 인용하세요.`;
+    }
+    if (type === 'brand') {
+      return `
+
+【필수 데이터 참조 지침】
+1. 자사/경쟁사별 연관 키워드 수, 감성 수치를 Executive Summary에 정확히 인용
+2. SOV와 감성 격차를 perceptionStages.stage2_comparison에 명시
+3. 각 경쟁사 브랜드명과 감성 수치를 competitionAnalysis.keyPlayers에 구체적 나열
+4. 자사 vs 경쟁사 연관 키워드 랭킹을 keywordMap.dataInsights에서 비교
+5. 채널별 작성일 분포 데이터가 있으면 contentFreshness에 실제 수치 기반으로 반영하고, contentDateAnalysis에 채널별 분포와 요약을 정확히 작성
+수치를 임의 생성하지 말고, 제공된 실제 수치를 정확히 인용하세요.`;
+    }
+    // general
+    return `
+
+【필수 데이터 참조 지침】
+1. 검색량, CTR, 경쟁도를 Executive Summary keyMetrics에 정확히 인용
+2. 광고 분석 데이터가 있으면 광고 순위/경쟁사 분석을 actionStrategies에 반영
+3. 채널별 감성 수치를 channelBreakdown.sentimentBreakdown에 정확히 반영
+4. 채널별 작성일 분포 데이터가 있으면 contentFreshness에 실제 수치 기반으로 반영하고, contentDateAnalysis에 채널별 분포와 요약을 정확히 작성
+수치를 임의 생성하지 말고, 제공된 실제 수치를 정확히 인용하세요.`;
+  };
+
   const systemPrompt = getSystemPrompt(keywordType) + `
 
 리포트는 다음 구조로 작성해야 합니다:
 
-1. **Executive Summary** (핵심 요약)
-   - 5개의 핵심 지표 (구체적 수치 포함)
-   - 승리 공식 (Winning Formula) - 성공을 위한 핵심 전략 한 문장
-   - 시장 기회 요약
-
-2. **3단계 소비자 인식 구조**
-   - Stage 1 (개념 이해): 소비자가 키워드를 어떻게 인식하는지
-   - Stage 2 (적극 비교): 구매 의사결정을 위한 비교 행동
-   - Stage 3 (전환 장벽): 구매를 막는 Pain Points
-
-3. **핵심 키워드 맵**
-   - 상위 키워드 랭킹 (빈도 기반)
-   - Pain Point 키워드 분리
-   - 데이터 기반 인사이트 3개
-
-4. **채널별 소비자 반응**
-   - 각 채널의 역할 정의
-   - 채널별 핵심 관심사
-   - 채널별 마케팅 전략
-
-5. **시장 환경 분석**
-   - 경쟁 구도 분석
-   - 디지털 트렌드 (모바일 비중, 콘텐츠 동향)
-
-6. **마케팅 인사이트** (4개)
-   - 각 인사이트는 Pain Point → Opportunity → Action 구조
-
-7. **실행 전략** (5개)
-   - 전략 1: 콘텐츠 마케팅 (SEO)
-   - 전략 2: 모바일 퍼널 최적화
-   - 전략 3: 차별화된 비교 경험
-   - 전략 4: 검색 광고 최적화
-   - 전략 5: 프로모션 설계
-
-8. **90일 액션플랜**
-   - Key Findings (4개)
-   - 타임라인: NOW → 30일 → 60일 → 90일
-
-9. **종합 결론**
-   - 요약
-   - 핵심 추천사항
+${getTypeSpecificSections(keywordType)}
+${getDataReferenceGuide(keywordType)}
 
 응답은 반드시 아래 JSON 형식으로 제공해주세요. 모든 텍스트는 한국어로, 전문적이고 구체적으로 작성하세요. 수치는 제공된 데이터를 기반으로 정확하게 인용하세요.`;
 
@@ -451,133 +1308,16 @@ async function generateIntegratedReport(
 분석 유형: ${keywordType.toUpperCase()} (${analysisTypeLabel[keywordType]})
 ${companyName ? `분석 대상 업체: ${companyName}` : ''}
 
-=== 핵심 수치 ===
-- 총 월간 검색량: ${totalVolume.toLocaleString()}건
-- 모바일 비중: ${mobileShare}%
-- 분석된 연관 키워드: ${keywordExpansion.keywordList?.length || 0}개
+${buildKeyMetricsSection(keywordType, metrics)}
 
 ${dataSummary}
+
+${buildDataMappingGuide(keywordType)}
 
 위 데이터를 바탕으로 PPT 수준의 종합 마케팅 리포트를 JSON 형식으로 생성해주세요.
 
 JSON 구조:
-{
-  "executiveSummary": {
-    "keyMetrics": [
-      {"label": "월 핵심 키워드 검색량", "value": "${totalVolume.toLocaleString()}", "description": "시장 성숙도 입증"},
-      {"label": "지표명", "value": "수치", "description": "의미"}
-    ],
-    "winningFormula": "성공을 위한 핵심 전략 (예: '비교 경험 단순화 + 모바일 퍼널 최적화')",
-    "marketOpportunity": "시장 기회 요약 (2-3문장)"
-  },
-  "perceptionStages": {
-    "stage1_awareness": {
-      "title": "개념 이해",
-      "insight": "소비자의 기본 인식 설명",
-      "keywords": ["관련 키워드1", "관련 키워드2"],
-      "metrics": "관련 수치 (예: 월 검색량 30,000건)"
-    },
-    "stage2_comparison": {
-      "title": "적극적 비교",
-      "insight": "비교 행동 패턴 설명",
-      "keywords": ["비교", "견적"],
-      "metrics": "CTR 등 관련 수치"
-    },
-    "stage3_conversion": {
-      "title": "전환 장벽",
-      "insight": "구매를 막는 요인",
-      "painPoints": ["복잡함", "고민"],
-      "sentiment": "긍정 67% 등 감성 분석 결과"
-    }
-  },
-  "keywordMap": {
-    "totalSearchVolume": "${totalVolume.toLocaleString()}건",
-    "topKeywords": [
-      {"rank": 1, "keyword": "키워드", "frequency": 54}
-    ],
-    "painPointKeywords": [
-      {"keyword": "복잡", "frequency": 5}
-    ],
-    "dataInsights": [
-      "가격 vs 보장의 균형 - 인사이트 설명",
-      "편의성 수요 급증 - 인사이트 설명",
-      "구매 직전 의도 포착 - 인사이트 설명"
-    ]
-  },
-  "channelBreakdown": [
-    {
-      "channel": "blog",
-      "channelName": "블로그",
-      "role": "정보 탐색 중심",
-      "keyInterests": ["실용 정보 선호", "할인 팁"],
-      "strategy": "5분 완성 가이드 등 실용형 콘텐츠 배포",
-      "sentimentBreakdown": {"positive": 60, "negative": 15, "neutral": 25}
-    }
-  ],
-  "marketEnvironment": {
-    "competitionAnalysis": {
-      "level": "높음",
-      "insight": "경쟁 구도 상세 분석",
-      "keyPlayers": ["주요 경쟁사1", "주요 경쟁사2"]
-    },
-    "digitalTrends": {
-      "mobileShare": "${mobileShare}%",
-      "contentFreshness": "최근 3개월 내 콘텐츠 비중",
-      "orgChanges": ["디지털 채널 강화 트렌드"]
-    }
-  },
-  "marketingInsights": [
-    {
-      "id": 1,
-      "title": "인사이트 제목",
-      "painPoint": {
-        "label": "Pain Point 요약",
-        "details": ["상세 내용1", "상세 내용2"]
-      },
-      "opportunity": {
-        "label": "Opportunity 요약",
-        "details": ["상세 내용1", "상세 내용2"]
-      },
-      "action": "실행 권고 사항"
-    }
-  ],
-  "actionStrategies": [
-    {
-      "id": 1,
-      "title": "콘텐츠 마케팅",
-      "subtitle": "SEO 기반 타겟 키워드 전략",
-      "sections": [
-        {"heading": "핵심 키워드 군", "items": ["키워드1", "키워드2"]},
-        {"heading": "틈새 키워드", "items": ["롱테일 키워드1"]}
-      ],
-      "expectedMetrics": [
-        {"label": "예상 CTR", "value": "35%"}
-      ]
-    }
-  ],
-  "actionPlan": {
-    "keyFindings": [
-      "비교 경험의 단순화가 핵심",
-      "모바일 퍼널 최적화 필수",
-      "브랜드 신뢰 × 투명 비교 공존",
-      "합리적 가치 제안 중요"
-    ],
-    "timeline": [
-      {"phase": "NOW", "label": "퍼널 지표 개선 착수", "category": "URGENT", "action": "이탈 마찰 요소 즉시 제거"},
-      {"phase": "30d", "label": "핵심 기능 MVP 론치", "category": "DEVELOP", "action": "AI 추천 로직 베타 오픈"},
-      {"phase": "60d", "label": "SEO 더블트랙 운영", "category": "MARKETING", "action": "대표 + 틈새 키워드 콘텐츠 배포"},
-      {"phase": "90d", "label": "시즌 캠페인 확대", "category": "SCALE-UP", "action": "데이터 기반 메시지로 집중 공략"}
-    ]
-  },
-  "conclusion": {
-    "summary": "종합 결론 요약 (2-3문장)",
-    "recommendations": [
-      "핵심 추천사항 1",
-      "핵심 추천사항 2",
-      "핵심 추천사항 3"
-    ]
-  }
-}`;
+${getTypeSpecificJsonTemplate(keywordType, metrics)}`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -601,6 +1341,7 @@ JSON 구조:
         generatedAt: new Date().toISOString(),
         keyword,
         companyName,
+        keywordType,
 
         executiveSummary: {
           keyMetrics: parsedResponse.executiveSummary?.keyMetrics || [],
@@ -621,20 +1362,27 @@ JSON 구조:
         },
 
         keywordMap: {
-          totalSearchVolume: parsedResponse.keywordMap?.totalSearchVolume || `${totalVolume.toLocaleString()}건`,
+          totalSearchVolume: parsedResponse.keywordMap?.totalSearchVolume || `${metrics.totalVolume.toLocaleString()}건`,
           topKeywords: parsedResponse.keywordMap?.topKeywords || [],
           painPointKeywords: parsedResponse.keywordMap?.painPointKeywords || [],
           dataInsights: parsedResponse.keywordMap?.dataInsights || [],
         },
 
-        channelBreakdown: parsedResponse.channelBreakdown || [],
+        channelBreakdown: (parsedResponse.channelBreakdown || []).map((cb: any) => {
+          const chData = contentAnalysis[cb.channel as ContentType] as any;
+          return {
+            ...cb,
+            dateAnalysis: chData?.dateAnalysis || null,
+            contentSentimentCounts: chData?.contentSentimentCounts || null,
+          };
+        }),
 
         marketEnvironment: {
           competitionAnalysis: parsedResponse.marketEnvironment?.competitionAnalysis || {
             level: '분석 중', insight: '', keyPlayers: []
           },
           digitalTrends: parsedResponse.marketEnvironment?.digitalTrends || {
-            mobileShare: `${mobileShare}%`, contentFreshness: '', orgChanges: []
+            mobileShare: `${metrics.mobileShare}%`, contentFreshness: '', orgChanges: []
           },
         },
 
@@ -651,6 +1399,8 @@ JSON 구조:
           summary: parsedResponse.conclusion?.summary || '',
           recommendations: parsedResponse.conclusion?.recommendations || [],
         },
+
+        contentDateAnalysis: parsedResponse.contentDateAnalysis || undefined,
       };
 
       return report;

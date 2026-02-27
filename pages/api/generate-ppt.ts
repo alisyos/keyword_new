@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import PptxGenJS from 'pptxgenjs';
-import { IntegratedReportData } from '../../types/integrated-analysis';
+import { IntegratedReportData, KeywordType } from '../../types/integrated-analysis';
 
 // 색상 테마
 const COLORS = {
@@ -20,6 +20,46 @@ const COLORS = {
   slate: '475569',
 };
 
+// 유형별 PPT 라벨
+function getPptLabels(keywordType: KeywordType) {
+  const labels = {
+    general: {
+      coverTitle: 'MARKETING INTELLIGENCE REPORT',
+      coverSubtitle: '시장 분석 리포트',
+      tocPerception: '2. 3단계 소비자 인식 구조',
+      tocMarket: '5. 시장 환경 분석',
+      tocStrategy: '7. 실행 전략 (5대 전략)',
+      slidePerceptionTitle: '3단계 소비자 인식 구조',
+      slidePerceptionSub: 'Consumer Perception Journey',
+      slideMarketTitle: '시장 환경 분석',
+      slideMarketSub: 'Market Environment',
+    },
+    shopping: {
+      coverTitle: 'E-COMMERCE INTELLIGENCE REPORT',
+      coverSubtitle: '이커머스 시장 분석 리포트',
+      tocPerception: '2. 3단계 구매 여정',
+      tocMarket: '5. 이커머스 시장 환경 분석',
+      tocStrategy: '7. 실행 전략 (이커머스 5대 전략)',
+      slidePerceptionTitle: '3단계 구매 여정',
+      slidePerceptionSub: 'Shopping Decision Journey',
+      slideMarketTitle: '이커머스 시장 환경 분석',
+      slideMarketSub: 'E-Commerce Market Environment',
+    },
+    brand: {
+      coverTitle: 'BRAND INTELLIGENCE REPORT',
+      coverSubtitle: '브랜드 경쟁력 분석 리포트',
+      tocPerception: '2. 3단계 브랜드 인식 구조',
+      tocMarket: '5. 브랜드 경쟁 환경 분석',
+      tocStrategy: '7. 실행 전략 (브랜드 5대 전략)',
+      slidePerceptionTitle: '3단계 브랜드 인식 구조',
+      slidePerceptionSub: 'Brand Perception Journey',
+      slideMarketTitle: '브랜드 경쟁 환경 분석',
+      slideMarketSub: 'Brand Competitive Environment',
+    },
+  };
+  return labels[keywordType] || labels.general;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -35,6 +75,8 @@ export default async function handler(
       return res.status(400).json({ error: 'Report data is required' });
     }
 
+    const keywordType: KeywordType = report.keywordType || 'general';
+    const pptLabels = getPptLabels(keywordType);
     const pptx = new PptxGenJS();
 
     // PPT 기본 설정
@@ -58,7 +100,7 @@ export default async function handler(
     const slide1 = pptx.addSlide();
     slide1.background = { color: COLORS.primary };
 
-    slide1.addText('MARKETING INTELLIGENCE REPORT', {
+    slide1.addText(pptLabels.coverTitle, {
       x: 0.5, y: 1.5, w: 9, h: 0.5,
       fontSize: 14, color: 'FFFFFF', fontFace: 'Arial',
       align: 'center', bold: false, italic: false,
@@ -70,7 +112,7 @@ export default async function handler(
       align: 'center', bold: true,
     });
 
-    slide1.addText('시장 분석 리포트', {
+    slide1.addText(pptLabels.coverSubtitle, {
       x: 0.5, y: 3.2, w: 9, h: 0.6,
       fontSize: 24, color: 'FFFFFF', fontFace: 'Arial',
       align: 'center',
@@ -102,12 +144,12 @@ export default async function handler(
 
     const tocItems = [
       '1. Executive Summary',
-      '2. 3단계 소비자 인식 구조',
+      pptLabels.tocPerception,
       '3. 핵심 키워드 맵',
-      '4. 채널별 소비자 반응',
-      '5. 시장 환경 분석',
+      '4. 채널별 콘텐츠 분석',
+      pptLabels.tocMarket,
       '6. 핵심 마케팅 인사이트',
-      '7. 실행 전략 (5대 전략)',
+      pptLabels.tocStrategy,
       '8. 90일 액션플랜',
       '9. 종합 결론',
     ];
@@ -190,7 +232,7 @@ export default async function handler(
 
     // ========== Slide 4: 3단계 소비자 인식 구조 ==========
     const slide4 = pptx.addSlide();
-    addSlideHeader(slide4, '3단계 소비자 인식 구조', 'Consumer Perception Journey');
+    addSlideHeader(slide4, pptLabels.slidePerceptionTitle, pptLabels.slidePerceptionSub);
 
     const stages = [
       { stage: report.perceptionStages?.stage1_awareness, color: COLORS.teal, label: 'AWARENESS' },
@@ -338,71 +380,193 @@ export default async function handler(
 
     addPageNumber(slide5, 5);
 
-    // ========== Slide 6: 채널별 소비자 반응 ==========
-    const slide6 = pptx.addSlide();
-    addSlideHeader(slide6, '채널별 소비자 반응', 'Channel Analysis');
-
+    // ========== Slide 6-7: 채널별 콘텐츠 분석 (채널별 통합, 2채널씩) ==========
     const channels = report.channelBreakdown?.slice(0, 4) || [];
-    channels.forEach((channel, idx) => {
-      const row = Math.floor(idx / 2);
-      const col = idx % 2;
-      const xPos = 0.5 + col * 4.7;
-      const yPos = 1.05 + row * 2.25;
+    const slide6Channels = channels.slice(0, 2);  // 블로그, 카페
+    const slide7Channels = channels.slice(2, 4);  // 유튜브, 뉴스
 
-      slide6.addShape('rect', {
-        x: xPos, y: yPos, w: 4.5, h: 2.1,
+    // 채널 카드 렌더 헬퍼
+    const renderChannelCard = (slide: PptxGenJS.Slide, channel: any, xPos: number, yPos: number) => {
+      // 배경 박스
+      slide.addShape('rect', {
+        x: xPos, y: yPos, w: 4.5, h: 4.0,
         fill: { color: COLORS.light },
         line: { color: COLORS.secondary, width: 1 },
       });
 
-      slide6.addText(channel.channelName, {
-        x: xPos + 0.1, y: yPos + 0.1, w: 3, h: 0.35,
+      // 채널명
+      const totalCount = channel.contentSentimentCounts?.total;
+      const channelTitle = totalCount ? `${channel.channelName} (총 ${totalCount}건)` : channel.channelName;
+      slide.addText(channelTitle, {
+        x: xPos + 0.1, y: yPos + 0.05, w: 3, h: 0.3,
         fontSize: 12, color: COLORS.secondary, fontFace: 'Arial', bold: true,
       });
 
-      slide6.addText(channel.role, {
-        x: xPos + 0.1, y: yPos + 0.45, w: 4.3, h: 0.35,
-        fontSize: 9, color: COLORS.primary, fontFace: 'Arial',
+      // 역할
+      slide.addText([
+        { text: '역할: ', options: { bold: true, color: COLORS.secondary, fontSize: 8 } },
+        { text: channel.role, options: { color: COLORS.dark, fontSize: 8 } },
+      ], {
+        x: xPos + 0.1, y: yPos + 0.30, w: 4.3, h: 0.25,
+        fontFace: 'Arial',
       });
 
-      // Sentiment bar
+      // 감성 분석 소제목 + 바
+      slide.addText('감성 분석:', {
+        x: xPos + 0.1, y: yPos + 0.55, w: 4.3, h: 0.15,
+        fontSize: 8, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+      });
       if (channel.sentimentBreakdown) {
-        const barY = yPos + 0.85;
+        const barY = yPos + 0.70;
         const totalWidth = 4.3;
         const posWidth = (channel.sentimentBreakdown.positive / 100) * totalWidth;
         const neuWidth = (channel.sentimentBreakdown.neutral / 100) * totalWidth;
         const negWidth = (channel.sentimentBreakdown.negative / 100) * totalWidth;
 
-        slide6.addShape('rect', { x: xPos + 0.1, y: barY, w: posWidth, h: 0.15, fill: { color: COLORS.success } });
-        slide6.addShape('rect', { x: xPos + 0.1 + posWidth, y: barY, w: neuWidth, h: 0.15, fill: { color: '9CA3AF' } });
-        slide6.addShape('rect', { x: xPos + 0.1 + posWidth + neuWidth, y: barY, w: negWidth, h: 0.15, fill: { color: COLORS.danger } });
+        slide.addShape('rect', { x: xPos + 0.1, y: barY, w: posWidth, h: 0.15, fill: { color: COLORS.success } });
+        slide.addShape('rect', { x: xPos + 0.1 + posWidth, y: barY, w: neuWidth, h: 0.15, fill: { color: '9CA3AF' } });
+        slide.addShape('rect', { x: xPos + 0.1 + posWidth + neuWidth, y: barY, w: negWidth, h: 0.15, fill: { color: COLORS.danger } });
 
-        slide6.addText(`긍정 ${channel.sentimentBreakdown.positive}% / 중립 ${channel.sentimentBreakdown.neutral}% / 부정 ${channel.sentimentBreakdown.negative}%`, {
-          x: xPos + 0.1, y: barY + 0.15, w: 4.3, h: 0.2,
+        slide.addText(`긍정 ${channel.sentimentBreakdown.positive}% / 중립 ${channel.sentimentBreakdown.neutral}% / 부정 ${channel.sentimentBreakdown.negative}%`, {
+          x: xPos + 0.1, y: yPos + 0.87, w: 4.3, h: 0.15,
           fontSize: 7, color: COLORS.slate, fontFace: 'Arial',
         });
       }
 
-      // Key interests
-      const interests = channel.keyInterests?.slice(0, 3).join(', ') || '';
-      slide6.addText(`관심사: ${interests}`, {
-        x: xPos + 0.1, y: yPos + 1.25, w: 4.3, h: 0.25,
-        fontSize: 8, color: COLORS.slate, fontFace: 'Arial',
+      // 긍부정 평가 소제목 + 개수 박스
+      slide.addText('긍부정 평가:', {
+        x: xPos + 0.1, y: yPos + 1.05, w: 4.3, h: 0.15,
+        fontSize: 8, color: COLORS.secondary, fontFace: 'Arial', bold: true,
       });
+      const counts = channel.contentSentimentCounts;
+      if (counts && counts.total > 0) {
+        const countY = yPos + 1.20;
+        const boxW = 1.35;
+        const countBoxes = [
+          { label: `긍정 ${counts.positive}개`, color: COLORS.success, bg: 'E8F5E9' },
+          { label: `중립 ${counts.neutral}개`, color: COLORS.slate, bg: 'F3F4F6' },
+          { label: `부정 ${counts.negative}개`, color: COLORS.danger, bg: 'FFEBEE' },
+        ];
+        countBoxes.forEach((box, bIdx) => {
+          slide.addShape('rect', {
+            x: xPos + 0.1 + bIdx * (boxW + 0.1), y: countY, w: boxW, h: 0.28,
+            fill: { color: box.bg },
+          });
+          slide.addText(box.label, {
+            x: xPos + 0.1 + bIdx * (boxW + 0.1), y: countY + 0.02, w: boxW, h: 0.24,
+            fontSize: 8, color: box.color, fontFace: 'Arial', align: 'center', bold: true,
+          });
+        });
+      }
 
-      // Strategy
-      slide6.addText(`전략: ${channel.strategy}`, {
-        x: xPos + 0.1, y: yPos + 1.55, w: 4.3, h: 0.5,
-        fontSize: 8, color: COLORS.dark, fontFace: 'Arial',
+      // 작성일 분포 소제목 + 바
+      slide.addText('작성일 분포:', {
+        x: xPos + 0.1, y: yPos + 1.55, w: 4.3, h: 0.15,
+        fontSize: 8, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+      });
+      const dateData = channel.dateAnalysis;
+      if (dateData && dateData.total > 0) {
+        const total = dateData.threeMonths + dateData.oneYear + dateData.twoYears + dateData.older + (dateData.noDate || 0);
+        if (total > 0) {
+          const barY = yPos + 1.70;
+          const barW = 4.3;
+          const pct3m = dateData.threeMonths / total;
+          const pct1y = dateData.oneYear / total;
+          const pct2y = dateData.twoYears / total;
+          const pctOld = dateData.older / total;
+          const pctNoDate = (dateData.noDate || 0) / total;
+
+          let bx = xPos + 0.1;
+          if (pct3m > 0) { slide.addShape('rect', { x: bx, y: barY, w: pct3m * barW, h: 0.2, fill: { color: COLORS.success } }); bx += pct3m * barW; }
+          if (pct1y > 0) { slide.addShape('rect', { x: bx, y: barY, w: pct1y * barW, h: 0.2, fill: { color: COLORS.warning } }); bx += pct1y * barW; }
+          if (pct2y > 0) { slide.addShape('rect', { x: bx, y: barY, w: pct2y * barW, h: 0.2, fill: { color: COLORS.orange } }); bx += pct2y * barW; }
+          if (pctOld > 0) { slide.addShape('rect', { x: bx, y: barY, w: pctOld * barW, h: 0.2, fill: { color: COLORS.slate } }); bx += pctOld * barW; }
+          if (pctNoDate > 0) { slide.addShape('rect', { x: bx, y: barY, w: pctNoDate * barW, h: 0.2, fill: { color: 'D1D5DB' } }); }
+
+          // 범례 2×2
+          const legendItems = [
+            { label: `3개월: ${dateData.threeMonths}건(${Math.round(pct3m * 100)}%)`, color: COLORS.success },
+            { label: `~1년: ${dateData.oneYear}건(${Math.round(pct1y * 100)}%)`, color: COLORS.warning },
+            { label: `~2년: ${dateData.twoYears}건(${Math.round(pct2y * 100)}%)`, color: COLORS.orange },
+            { label: `2년+: ${dateData.older}건(${Math.round(pctOld * 100)}%)`, color: COLORS.slate },
+          ];
+          legendItems.forEach((item, lIdx) => {
+            const lCol = lIdx % 2;
+            const lRow = Math.floor(lIdx / 2);
+            const lx = xPos + 0.1 + lCol * 2.15;
+            const ly = yPos + 1.95 + lRow * 0.22;
+            slide.addShape('rect', { x: lx, y: ly + 0.03, w: 0.15, h: 0.12, fill: { color: item.color } });
+            slide.addText(item.label, {
+              x: lx + 0.2, y: ly, w: 1.9, h: 0.2,
+              fontSize: 7, color: COLORS.dark, fontFace: 'Arial',
+            });
+          });
+
+          if (dateData.noDate > 0) {
+            slide.addText(`날짜없음: ${dateData.noDate}건`, {
+              x: xPos + 0.1, y: yPos + 2.39, w: 4.3, h: 0.15,
+              fontSize: 7, color: '9CA3AF', fontFace: 'Arial',
+            });
+          }
+        }
+      } else {
+        slide.addText('작성일 데이터 없음', {
+          x: xPos + 0.1, y: yPos + 1.70, w: 4.3, h: 0.25,
+          fontSize: 8, color: '9CA3AF', fontFace: 'Arial',
+        });
+      }
+
+      // 주요 관심사
+      const interests = channel.keyInterests?.slice(0, 4) || [];
+      if (interests.length > 0) {
+        slide.addText('주요 관심사:', {
+          x: xPos + 0.1, y: yPos + 2.55, w: 4.3, h: 0.18,
+          fontSize: 8, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+        });
+        const kwText = interests.map((k: string) => `#${k}`).join('  ');
+        slide.addText(kwText, {
+          x: xPos + 0.1, y: yPos + 2.73, w: 4.3, h: 0.30,
+          fontSize: 8, color: COLORS.primary, fontFace: 'Arial',
+          valign: 'top',
+        });
+      }
+
+      // 전략
+      slide.addText([
+        { text: '전략: ', options: { bold: true, color: COLORS.secondary, fontSize: 8 } },
+        { text: channel.strategy, options: { color: COLORS.dark, fontSize: 8 } },
+      ], {
+        x: xPos + 0.1, y: yPos + 3.05, w: 4.3, h: 0.55,
+        fontFace: 'Arial',
         valign: 'top',
       });
+    };
+
+    // Slide 6: 블로그 + 카페
+    const slide6 = pptx.addSlide();
+    addSlideHeader(slide6, '채널별 콘텐츠 분석 (1/2)', 'Channel Content Analysis');
+
+    slide6Channels.forEach((channel, idx) => {
+      const xPos = idx === 0 ? 0.3 : 5.1;
+      renderChannelCard(slide6, channel, xPos, 1.05);
     });
 
     addPageNumber(slide6, 6);
 
-    // ========== Slide 7: 시장 환경 분석 ==========
+    // Slide 7: 유튜브 + 뉴스
+    const slide7date = pptx.addSlide();
+    addSlideHeader(slide7date, '채널별 콘텐츠 분석 (2/2)', 'Channel Content Analysis');
+
+    slide7Channels.forEach((channel, idx) => {
+      const xPos = idx === 0 ? 0.3 : 5.1;
+      renderChannelCard(slide7date, channel, xPos, 1.05);
+    });
+
+    addPageNumber(slide7date, 7);
+
+    // ========== Slide 8: 시장 환경 분석 ==========
     const slide7 = pptx.addSlide();
-    addSlideHeader(slide7, '시장 환경 분석', 'Market Environment');
+    addSlideHeader(slide7, pptLabels.slideMarketTitle, pptLabels.slideMarketSub);
 
     // 경쟁 분석
     slide7.addShape('rect', {
@@ -476,14 +640,14 @@ export default async function handler(
       });
     });
 
-    addPageNumber(slide7, 7);
+    addPageNumber(slide7, 8);
 
-    // ========== Slides 8+: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========
+    // ========== Slides 9+: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========
     const insights = report.marketingInsights || [];
     const insightSlides = insights.length;
 
     insights.forEach((insight, insightIdx) => {
-      const slideNum = 8 + insightIdx;
+      const slideNum = 9 + insightIdx;
       const slide = pptx.addSlide();
       addSlideHeader(slide, `핵심 마케팅 인사이트 #${insight.id}`, insight.title);
 
@@ -537,7 +701,7 @@ export default async function handler(
     // ========== Slides: 실행 전략 ==========
     const strategies = report.actionStrategies || [];
     strategies.forEach((strategy, stratIdx) => {
-      const slideNum = 8 + insightSlides + stratIdx;
+      const slideNum = 9 + insightSlides + stratIdx;
       const slide = pptx.addSlide();
       addSlideHeader(slide, `실행 전략 #${strategy.id}`, strategy.subtitle);
 
@@ -598,7 +762,7 @@ export default async function handler(
     });
 
     // ========== Slide: 90일 액션플랜 ==========
-    const actionPlanSlideNum = 8 + insightSlides + strategies.length;
+    const actionPlanSlideNum = 9 + insightSlides + strategies.length;
     const actionPlanSlide = pptx.addSlide();
     addSlideHeader(actionPlanSlide, '90일 액션플랜', 'Action Timeline');
 

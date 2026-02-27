@@ -180,6 +180,16 @@ export interface BrandKeywordFilter {
   isEnabled: boolean;      // 필터 활성화 여부 (기본: true)
 }
 
+// ===== 채널별 작성일 분석 통계 =====
+export interface DateAnalysisStats {
+  total: number;
+  threeMonths: number;     // 최근 3개월
+  oneYear: number;         // 3개월~1년
+  twoYears: number;        // 1년~2년
+  older: number;           // 2년 이상
+  noDate: number;          // 날짜 정보 없음
+}
+
 // ===== 통합 분석 전용 타입 =====
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
@@ -220,6 +230,7 @@ export interface IntegratedReportData {
   generatedAt: string;
   keyword: string;
   companyName?: string;
+  keywordType?: KeywordType;
 
   // 1. Executive Summary (핵심 요약)
   executiveSummary: {
@@ -269,7 +280,7 @@ export interface IntegratedReportData {
     dataInsights: string[];
   };
 
-  // 4. 채널별 소비자 반응
+  // 4. 채널별 콘텐츠 분석
   channelBreakdown: Array<{
     channel: string;
     channelName: string;
@@ -280,6 +291,20 @@ export interface IntegratedReportData {
       positive: number;
       negative: number;
       neutral: number;
+    };
+    dateAnalysis?: {
+      total: number;
+      threeMonths: number;
+      oneYear: number;
+      twoYears: number;
+      older: number;
+      noDate: number;
+    };
+    contentSentimentCounts?: {
+      positive: number;
+      negative: number;
+      neutral: number;
+      total: number;
     };
   }>;
 
@@ -342,6 +367,22 @@ export interface IntegratedReportData {
   conclusion: {
     summary: string;
     recommendations: string[];
+  };
+
+  // 콘텐츠 작성일 분석 (선택)
+  contentDateAnalysis?: {
+    overall: string;             // 전체 요약 (GPT 생성)
+    channels: Array<{
+      channel: string;
+      channelName: string;
+      summary: string;           // 채널별 요약 (GPT 생성)
+      distribution: {
+        threeMonths: number;
+        oneYear: number;
+        twoYears: number;
+        older: number;
+      };
+    }>;
   };
 }
 
