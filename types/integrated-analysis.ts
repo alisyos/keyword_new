@@ -64,6 +64,57 @@ export interface KeywordExpansionGPTAnalysis {
   conclusion: string;                // 5. 결론 및 마케팅 시사점
 }
 
+// ===== 브랜드 비교 전용 GPT 분석 결과 =====
+
+// Step 2: 브랜드별 키워드 확장 비교 GPT 분석
+export interface BrandKeywordExpansionInsight {
+  brandKeyword: string;
+  isOwnBrand: boolean;
+  searchVolumeAnalysis: string;
+  engagementAnalysis: string;
+  competitionAnalysis: string;
+  consumerTrendAnalysis: string;
+  conclusion: string;
+}
+
+export interface BrandKeywordComparisonGPTAnalysis {
+  perBrand: BrandKeywordExpansionInsight[];
+  comparison: {
+    sovInterpretation: string;
+    keywordOverlap: string;
+    competitiveAdvantage: string;
+    threatKeywords: string[];
+    opportunityKeywords: string[];
+    strategicRecommendation: string;
+  };
+}
+
+// Step 3: 브랜드별 콘텐츠 비교 GPT 분석
+export interface BrandContentInsight {
+  brandKeyword: string;
+  isOwnBrand: boolean;
+  strengths: string[];
+  weaknesses: string[];
+  sentimentInterpretation: string;
+  topAssociations: string[];
+  channelHighlights: Partial<Record<'blog' | 'cafe' | 'youtube' | 'news', string>>;
+}
+
+export interface BrandContentComparisonGPTAnalysis {
+  perBrand: BrandContentInsight[];
+  comparison: {
+    sentimentGapAnalysis: string;
+    perceivedPositioning: string;
+    keyDifferentiators: Array<{
+      dimension: string;
+      ownBrand: string;
+      competitors: string;
+    }>;
+    competitiveThreats: string[];
+    growthOpportunities: string[];
+  };
+}
+
 // 광고 분석 관련 타입
 export interface AdAnalysisResult {
   ourAd: {
@@ -79,6 +130,18 @@ export interface AdAnalysisResult {
     description: string;
     improvementPoints: string;
   }>;
+}
+
+// 브랜드 유형 전용: 브랜드별 광고 분석 항목
+export interface BrandAdAnalysisItem {
+  brandKeyword: string;
+  isOwnBrand: boolean;
+  inputMode: 'image' | 'text';
+  adText: string;
+  hasImage: boolean;
+  result: AdAnalysisResult | null;
+  loading: boolean;
+  skipped: boolean;
 }
 
 // ===== 쇼핑 검색 분석 구조화 타입 =====
@@ -256,6 +319,8 @@ export interface IntegratedReportData {
       insight: string;
       keywords: string[];
       metrics: string;
+      // 브랜드 유형 전용
+      brandSovTable?: Array<{ brand: string; sov: number; rank: number }>;
     };
     stage3_conversion: {
       title: string;
@@ -314,6 +379,13 @@ export interface IntegratedReportData {
       level: string;
       insight: string;
       keyPlayers: string[];
+      // 브랜드 유형 전용
+      brandSnapshots?: Array<{
+        brand: string;
+        sov: number;
+        sentiment: { positive: number; negative: number };
+        shortNote: string;
+      }>;
     };
     digitalTrends: {
       mobileShare: string;
@@ -384,6 +456,56 @@ export interface IntegratedReportData {
       };
     }>;
   };
+
+  // 15. 자사 vs 경쟁사 종합 비교 (브랜드 유형 전용)
+  brandComparison?: {
+    comparisonMatrix: Array<{
+      metric: string;
+      ownValue: string;
+      competitors: Array<{ brandKeyword: string; value: string }>;
+      winner: 'own' | 'competitor' | 'neutral';
+      insight: string;
+    }>;
+    sov: {
+      ownShare: number;
+      competitorShares: Array<{ brandKeyword: string; share: number }>;
+      interpretation: string;
+    };
+    ownStrengths: string[];
+    ownWeaknesses: string[];
+    competitorProfiles: Array<{
+      brandKeyword: string;
+      positioning: string;
+      strengths: string[];
+      weaknesses: string[];
+      threatLevel: 'high' | 'medium' | 'low';
+      counterStrategy: string;
+    }>;
+    differentiationAxes: Array<{
+      axis: string;
+      description: string;
+      ownPosition: string;
+      competitorPosition: string;
+    }>;
+    conquestKeywords: Array<{
+      keyword: string;
+      currentLeader: string;
+      rationale: string;
+    }>;
+    keywordComparison: Array<{
+      keyword: string;
+      ownRank?: number;
+      competitorRanks: Array<{ brandKeyword: string; rank: number | null }>;
+    }>;
+    sentimentComparison: Array<{
+      brandKeyword: string;
+      positive: number;
+      neutral: number;
+      negative: number;
+      topPositiveKeywords: string[];
+      topNegativeKeywords: string[];
+    }>;
+  };
 }
 
 // 통합 분석 전체 상태
@@ -433,6 +555,16 @@ export interface IntegratedAnalysisState {
   brandComparisonLoading: boolean;
   brandKeywordFilters: BrandKeywordFilter[];
 
+  // 브랜드 비교 GPT 분석 (브랜드 유형용)
+  brandKeywordExpansionGPT: BrandKeywordComparisonGPTAnalysis | null;
+  brandKeywordExpansionGPTLoading: boolean;
+  brandContentComparisonGPT: BrandContentComparisonGPTAnalysis | null;
+  brandContentComparisonGPTLoading: boolean;
+
+  // 브랜드 광고 분석 (브랜드 유형용 Step 4)
+  brandAdAnalysis: BrandAdAnalysisItem[] | null;
+  brandAdAnalysisBatchLoading: boolean;
+
   // 종합 리포트
   integratedReport: IntegratedReportData | null;
   reportLoading: boolean;
@@ -454,6 +586,13 @@ export interface IntegratedReportRequest {
   adAnalysis?: AdAnalysisResult;
   shoppingAnalysis?: ShoppingSearchAnalysisResult;
   brandComparison?: BrandComparisonResult;
+  brandKeywordExpansionGPT?: BrandKeywordComparisonGPTAnalysis;
+  brandContentComparisonGPT?: BrandContentComparisonGPTAnalysis;
+  brandAdAnalysis?: Array<{
+    brandKeyword: string;
+    isOwnBrand: boolean;
+    result: AdAnalysisResult;
+  }>;
 }
 
 // 초기 상태
@@ -491,6 +630,12 @@ export const initialAnalysisState: IntegratedAnalysisState = {
   brandComparison: null,
   brandComparisonLoading: false,
   brandKeywordFilters: [],
+  brandKeywordExpansionGPT: null,
+  brandKeywordExpansionGPTLoading: false,
+  brandContentComparisonGPT: null,
+  brandContentComparisonGPTLoading: false,
+  brandAdAnalysis: null,
+  brandAdAnalysisBatchLoading: false,
   integratedReport: null,
   reportLoading: false,
 };

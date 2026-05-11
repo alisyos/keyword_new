@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Head from 'next/head';
 import axios from 'axios';
 import {
@@ -9,10 +9,13 @@ import {
   KeywordExpansionGPTAnalysis,
   KeywordAnalysisResult,
   AdAnalysisResult,
+  BrandAdAnalysisItem,
   ShoppingSearchAnalysisResult,
   ShoppingPlatformData,
   BrandComparisonResult,
   BrandKeywordFilter,
+  BrandKeywordComparisonGPTAnalysis,
+  BrandContentComparisonGPTAnalysis,
   ContentType,
   WizardStep,
   KeywordType,
@@ -688,6 +691,8 @@ interface Step2BrandProps {
   brandComparison: BrandComparisonResult | null;
   loading: boolean;
   brandKeywordFilters: BrandKeywordFilter[];
+  brandKeywordExpansionGPT: BrandKeywordComparisonGPTAnalysis | null;
+  brandKeywordExpansionGPTLoading: boolean;
   onFilterChange: (brand: string, text: string) => void;
   onFilterToggle: (brand: string, enabled: boolean) => void;
   onAnalyze: () => void;
@@ -702,6 +707,8 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
   brandComparison,
   loading,
   brandKeywordFilters,
+  brandKeywordExpansionGPT,
+  brandKeywordExpansionGPTLoading,
   onFilterChange,
   onFilterToggle,
   onAnalyze,
@@ -983,6 +990,93 @@ const Step2BrandComparison: React.FC<Step2BrandProps> = ({
               })}
             </div>
           </div>
+
+          {/* AI 브랜드 비교 인사이트 (신규) */}
+          {(brandKeywordExpansionGPTLoading || brandKeywordExpansionGPT) && (
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border border-indigo-200 p-5 mt-6">
+              <div className="flex items-center gap-2 mb-4">
+                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <h3 className="text-base font-bold text-gray-800">AI 브랜드 비교 인사이트</h3>
+              </div>
+
+              {brandKeywordExpansionGPTLoading && (
+                <div className="text-sm text-gray-500 py-4 text-center">AI가 브랜드별 키워드를 비교 분석 중입니다...</div>
+              )}
+
+              {brandKeywordExpansionGPT && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="bg-white rounded p-3 border border-indigo-100">
+                      <div className="text-xs font-semibold text-indigo-700 mb-1">SOV 해석</div>
+                      <div className="text-sm text-gray-700 whitespace-pre-line">{brandKeywordExpansionGPT.comparison.sovInterpretation}</div>
+                    </div>
+                    <div className="bg-white rounded p-3 border border-indigo-100">
+                      <div className="text-xs font-semibold text-indigo-700 mb-1">키워드 겹침/차별화</div>
+                      <div className="text-sm text-gray-700 whitespace-pre-line">{brandKeywordExpansionGPT.comparison.keywordOverlap}</div>
+                    </div>
+                    <div className="bg-white rounded p-3 border border-indigo-100">
+                      <div className="text-xs font-semibold text-green-700 mb-1">자사 경쟁 우위</div>
+                      <div className="text-sm text-gray-700 whitespace-pre-line">{brandKeywordExpansionGPT.comparison.competitiveAdvantage}</div>
+                    </div>
+                    <div className="bg-white rounded p-3 border border-indigo-100">
+                      <div className="text-xs font-semibold text-purple-700 mb-1">전략 권고</div>
+                      <div className="text-sm text-gray-700 whitespace-pre-line">{brandKeywordExpansionGPT.comparison.strategicRecommendation}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {brandKeywordExpansionGPT.comparison.threatKeywords.length > 0 && (
+                      <div className="bg-red-50 rounded p-3 border border-red-100">
+                        <div className="text-xs font-semibold text-red-700 mb-2">⚠ 위협 키워드 (경쟁사 우세)</div>
+                        <div className="flex flex-wrap gap-1">
+                          {brandKeywordExpansionGPT.comparison.threatKeywords.map((k, i) => (
+                            <span key={i} className="px-2 py-0.5 text-xs bg-white text-red-700 rounded border border-red-200">{k}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {brandKeywordExpansionGPT.comparison.opportunityKeywords.length > 0 && (
+                      <div className="bg-emerald-50 rounded p-3 border border-emerald-100">
+                        <div className="text-xs font-semibold text-emerald-700 mb-2">★ 기회 키워드 (공략 가능)</div>
+                        <div className="flex flex-wrap gap-1">
+                          {brandKeywordExpansionGPT.comparison.opportunityKeywords.map((k, i) => (
+                            <span key={i} className="px-2 py-0.5 text-xs bg-white text-emerald-700 rounded border border-emerald-200">{k}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {brandKeywordExpansionGPT.perBrand.length > 0 && (
+                    <details className="bg-white rounded border border-indigo-100">
+                      <summary className="cursor-pointer p-3 text-sm font-semibold text-gray-700 hover:bg-indigo-50 rounded">
+                        브랜드별 상세 AI 인사이트 ({brandKeywordExpansionGPT.perBrand.length}개 브랜드)
+                      </summary>
+                      <div className="p-3 space-y-3 border-t border-indigo-100">
+                        {brandKeywordExpansionGPT.perBrand.map((p, i) => (
+                          <div key={i} className={`rounded p-3 ${p.isOwnBrand ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+                            <div className="font-bold text-sm text-gray-800 mb-2">
+                              {p.brandKeyword}
+                              {p.isOwnBrand && <span className="ml-2 text-xs text-blue-600">(자사)</span>}
+                            </div>
+                            <div className="text-xs text-gray-700 space-y-1">
+                              <div><span className="font-semibold">검색량: </span>{p.searchVolumeAnalysis}</div>
+                              <div><span className="font-semibold">관여도: </span>{p.engagementAnalysis}</div>
+                              <div><span className="font-semibold">경쟁: </span>{p.competitionAnalysis}</div>
+                              <div><span className="font-semibold">트렌드: </span>{p.consumerTrendAnalysis}</div>
+                              <div><span className="font-semibold">결론: </span>{p.conclusion}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -1636,6 +1730,8 @@ interface Step3BrandProps {
   brandComparison: BrandComparisonResult | null;
   selectedChannels: ContentType[];
   loading: boolean;
+  brandContentComparisonGPT: BrandContentComparisonGPTAnalysis | null;
+  brandContentComparisonGPTLoading: boolean;
   onChannelToggle: (channel: ContentType) => void;
   onAnalyze: () => void;
   onReanalyze: () => void;
@@ -1647,6 +1743,8 @@ const Step3BrandComparison: React.FC<Step3BrandProps> = ({
   brandComparison,
   selectedChannels,
   loading,
+  brandContentComparisonGPT,
+  brandContentComparisonGPTLoading,
   onChannelToggle,
   onAnalyze,
   onReanalyze,
@@ -2034,6 +2132,123 @@ const Step3BrandComparison: React.FC<Step3BrandProps> = ({
         </div>
       )}
 
+      {/* AI 브랜드 콘텐츠 비교 인사이트 (신규) */}
+      {hasAnyResult && (brandContentComparisonGPTLoading || brandContentComparisonGPT) && (
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200 p-5 mt-6">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <h3 className="text-base font-bold text-gray-800">AI 브랜드 콘텐츠 비교 인사이트</h3>
+          </div>
+
+          {brandContentComparisonGPTLoading && (
+            <div className="text-sm text-gray-500 py-4 text-center">AI가 브랜드별 콘텐츠를 비교 분석 중입니다...</div>
+          )}
+
+          {brandContentComparisonGPT && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-white rounded p-3 border border-purple-100">
+                  <div className="text-xs font-semibold text-purple-700 mb-1">감성 격차 분석</div>
+                  <div className="text-sm text-gray-700 whitespace-pre-line">{brandContentComparisonGPT.comparison.sentimentGapAnalysis}</div>
+                </div>
+                <div className="bg-white rounded p-3 border border-purple-100">
+                  <div className="text-xs font-semibold text-purple-700 mb-1">인식 포지셔닝</div>
+                  <div className="text-sm text-gray-700 whitespace-pre-line">{brandContentComparisonGPT.comparison.perceivedPositioning}</div>
+                </div>
+              </div>
+
+              {brandContentComparisonGPT.comparison.keyDifferentiators.length > 0 && (
+                <div className="bg-white rounded border border-purple-100 mb-4">
+                  <div className="px-3 py-2 text-sm font-semibold text-gray-700 bg-purple-50 border-b border-purple-100">차별화 축</div>
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-gray-500 bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">차원</th>
+                        <th className="px-3 py-2 text-left">자사</th>
+                        <th className="px-3 py-2 text-left">경쟁사</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brandContentComparisonGPT.comparison.keyDifferentiators.map((d, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-3 py-2 font-medium text-purple-700">{d.dimension}</td>
+                          <td className="px-3 py-2 text-blue-700">{d.ownBrand}</td>
+                          <td className="px-3 py-2 text-gray-700">{d.competitors}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {brandContentComparisonGPT.comparison.competitiveThreats.length > 0 && (
+                  <div className="bg-red-50 rounded p-3 border border-red-100">
+                    <div className="text-xs font-semibold text-red-700 mb-2">⚠ 경쟁 위협</div>
+                    <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      {brandContentComparisonGPT.comparison.competitiveThreats.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {brandContentComparisonGPT.comparison.growthOpportunities.length > 0 && (
+                  <div className="bg-emerald-50 rounded p-3 border border-emerald-100">
+                    <div className="text-xs font-semibold text-emerald-700 mb-2">★ 성장 기회</div>
+                    <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      {brandContentComparisonGPT.comparison.growthOpportunities.map((o, i) => <li key={i}>{o}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {brandContentComparisonGPT.perBrand.length > 0 && (
+                <details className="bg-white rounded border border-purple-100">
+                  <summary className="cursor-pointer p-3 text-sm font-semibold text-gray-700 hover:bg-purple-50 rounded">
+                    브랜드별 강점/약점 상세 ({brandContentComparisonGPT.perBrand.length}개 브랜드)
+                  </summary>
+                  <div className="p-3 space-y-3 border-t border-purple-100">
+                    {brandContentComparisonGPT.perBrand.map((p, i) => (
+                      <div key={i} className={`rounded p-3 ${p.isOwnBrand ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
+                        <div className="font-bold text-sm text-gray-800 mb-2">
+                          {p.brandKeyword}
+                          {p.isOwnBrand && <span className="ml-2 text-xs text-blue-600">(자사)</span>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                          <div className="bg-green-50 rounded p-2">
+                            <div className="font-semibold text-green-700 mb-1">강점</div>
+                            <ul className="text-gray-700 space-y-0.5 list-disc list-inside">
+                              {p.strengths.map((s, j) => <li key={j}>{s}</li>)}
+                            </ul>
+                          </div>
+                          <div className="bg-red-50 rounded p-2">
+                            <div className="font-semibold text-red-700 mb-1">약점</div>
+                            <ul className="text-gray-700 space-y-0.5 list-disc list-inside">
+                              {p.weaknesses.map((w, j) => <li key={j}>{w}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-700">
+                          <div><span className="font-semibold">감성 해석: </span>{p.sentimentInterpretation}</div>
+                          {p.topAssociations.length > 0 && (
+                            <div className="mt-1">
+                              <span className="font-semibold">연관 이미지: </span>
+                              {p.topAssociations.map((a, j) => (
+                                <span key={j} className="ml-1 px-1.5 py-0.5 bg-white rounded border border-gray-200 text-xs">{a}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex justify-between pt-6">
         <button
           onClick={onPrev}
@@ -2311,6 +2526,357 @@ const Step4AdAnalysis: React.FC<Step4Props> = ({
           className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
         >
           ← 이전
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ===== Step 4: 브랜드별 광고 분석 (브랜드 유형용) =====
+interface Step4BrandProps {
+  ownBrand: string;
+  competitorBrands: string[];
+  brandAdAnalysis: BrandAdAnalysisItem[] | null;
+  batchLoading: boolean;
+  brandAdFiles: Record<number, File | null>;
+  onItemUpdate: (idx: number, patch: Partial<BrandAdAnalysisItem>) => void;
+  onItemFileSelect: (idx: number, file: File | null) => void;
+  onAnalyzeOne: (idx: number) => void;
+  onAnalyzeAll: () => void;
+  onItemSkip: (idx: number) => void;
+  onSkipAll: () => void;
+  onItemReanalyze: (idx: number) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}
+
+const Step4BrandAdAnalysis: React.FC<Step4BrandProps> = ({
+  ownBrand,
+  competitorBrands,
+  brandAdAnalysis,
+  batchLoading,
+  brandAdFiles,
+  onItemUpdate,
+  onItemFileSelect,
+  onAnalyzeOne,
+  onAnalyzeAll,
+  onItemSkip,
+  onSkipAll,
+  onItemReanalyze,
+  onPrev,
+  onNext,
+}) => {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(0);
+  const [imagePreviews, setImagePreviews] = useState<Record<number, string | null>>({});
+
+  const items = brandAdAnalysis || [];
+  const totalCount = items.length;
+  const completedCount = items.filter(i => i.result || i.skipped).length;
+  const analyzedCount = items.filter(i => i.result).length;
+
+  const canProceed = totalCount > 0 && items.every(i => i.result || i.skipped);
+
+  const handleFileSelect = (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (file) {
+      if (!file.type.includes('image')) {
+        alert('이미지 파일만 업로드 가능합니다.');
+        return;
+      }
+      onItemFileSelect(idx, file);
+      onItemUpdate(idx, { hasImage: true });
+      const reader = new FileReader();
+      reader.onload = () => setImagePreviews(prev => ({ ...prev, [idx]: reader.result as string }));
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const hasInput = (item: BrandAdAnalysisItem, idx: number) => {
+    if (item.inputMode === 'text') return !!item.adText.trim();
+    return !!brandAdFiles[idx];
+  };
+
+  const batchableCount = items.filter((i, idx) => !i.result && !i.skipped && hasInput(i, idx)).length;
+
+  return (
+    <div>
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">브랜드별 광고 분석 (선택)</h2>
+        <p className="text-gray-600">자사 브랜드와 경쟁사 브랜드의 광고를 비교 분석합니다.</p>
+        <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 bg-blue-50 rounded-full">
+          <span className="text-sm font-medium text-blue-700">진행 상황:</span>
+          <span className="text-sm font-bold text-blue-700">{completedCount} / {totalCount}</span>
+          <span className="text-xs text-gray-500">(분석 {analyzedCount} · 건너뜀 {completedCount - analyzedCount})</span>
+        </div>
+      </div>
+
+      {/* 아코디언 카드 */}
+      <div className="space-y-3 mb-6">
+        {items.map((item, idx) => {
+          const isExpanded = expandedIdx === idx;
+          const statusBadge = item.result
+            ? { label: '분석 완료', color: 'bg-green-100 text-green-700' }
+            : item.skipped
+              ? { label: '건너뜀', color: 'bg-gray-100 text-gray-500' }
+              : item.loading
+                ? { label: '분석 중...', color: 'bg-blue-100 text-blue-700' }
+                : { label: '미분석', color: 'bg-amber-100 text-amber-700' };
+
+          return (
+            <div key={idx} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              {/* 카드 헤더 */}
+              <button
+                type="button"
+                onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    item.isOwnBrand ? 'bg-blue-600 text-white' : 'bg-gray-400 text-white'
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  <span className="font-bold text-gray-800">{item.brandKeyword}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    item.isOwnBrand ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {item.isOwnBrand ? '자사' : '경쟁사'}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded font-semibold ${statusBadge.color}`}>
+                    {statusBadge.label}
+                  </span>
+                </div>
+                <svg className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* 카드 본문 */}
+              {isExpanded && (
+                <div className="border-t border-gray-200 p-4 space-y-3">
+                  {/* 결과 미존재: 입력 UI */}
+                  {!item.result && !item.skipped && (
+                    <>
+                      {/* 입력 모드 토글 */}
+                      <div className="flex border-b border-gray-200">
+                        <button
+                          type="button"
+                          onClick={() => onItemUpdate(idx, { inputMode: 'text' })}
+                          className={`px-4 py-2 text-sm font-medium transition-colors ${
+                            item.inputMode === 'text'
+                              ? 'text-blue-600 border-b-2 border-blue-600'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          텍스트 붙여넣기
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onItemUpdate(idx, { inputMode: 'image' })}
+                          className={`px-4 py-2 text-sm font-medium transition-colors ${
+                            item.inputMode === 'image'
+                              ? 'text-blue-600 border-b-2 border-blue-600'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          이미지 업로드
+                        </button>
+                      </div>
+
+                      {/* 텍스트 모드 */}
+                      {item.inputMode === 'text' && (
+                        <div>
+                          <textarea
+                            value={item.adText}
+                            onChange={(e) => onItemUpdate(idx, { adText: e.target.value })}
+                            placeholder={`'${item.brandKeyword}' 키워드 검색결과의 광고 영역을 복사하여 붙여넣으세요.`}
+                            className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono resize-y"
+                          />
+                        </div>
+                      )}
+
+                      {/* 이미지 모드 */}
+                      {item.inputMode === 'image' && (
+                        <div className="flex justify-center px-6 pt-4 pb-4 border-2 border-gray-300 border-dashed rounded-lg">
+                          <div className="space-y-1 text-center">
+                            {imagePreviews[idx] ? (
+                              <div className="mb-3">
+                                <img src={imagePreviews[idx]!} alt="미리보기" className="mx-auto h-32 object-contain rounded" />
+                              </div>
+                            ) : (
+                              <svg className="mx-auto h-10 w-10 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                            <div className="flex text-sm text-gray-600 justify-center">
+                              <label className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
+                                <span>이미지 파일 선택</span>
+                                <input type="file" className="sr-only" accept="image/*" onChange={(e) => handleFileSelect(idx, e)} />
+                              </label>
+                            </div>
+                            <p className="text-xs text-gray-500">PNG, JPG 최대 10MB</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 카드 버튼 */}
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          onClick={() => onItemSkip(idx)}
+                          className="px-3 py-1.5 text-sm border border-gray-300 text-gray-600 rounded hover:bg-gray-50"
+                        >
+                          이 브랜드 건너뛰기
+                        </button>
+                        <button
+                          onClick={() => onAnalyzeOne(idx)}
+                          disabled={!hasInput(item, idx) || item.loading || batchLoading}
+                          className={`px-4 py-1.5 text-sm font-semibold rounded transition-all ${
+                            hasInput(item, idx) && !item.loading && !batchLoading
+                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow hover:shadow-md'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          {item.loading ? '분석 중...' : '이 브랜드 분석'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 건너뜀 상태 */}
+                  {item.skipped && !item.result && (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-gray-500 mb-3">이 브랜드는 분석을 건너뛴 상태입니다.</p>
+                      <button
+                        onClick={() => onItemUpdate(idx, { skipped: false })}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        건너뛰기 취소
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 분석 결과 */}
+                  {item.result && (
+                    <div className="space-y-3">
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => onItemReanalyze(idx)}
+                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          다시 분석
+                        </button>
+                      </div>
+
+                      {/* 광고 순위 */}
+                      <div className="bg-white rounded-lg p-3 border-l-4 border-blue-500">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-bold text-blue-700">광고 현황</div>
+                          <div className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            item.result.ourAd.rank > 0
+                              ? item.result.ourAd.rank <= 3
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}>
+                            {item.result.ourAd.rank > 0 ? `${item.result.ourAd.rank}위` : '미노출'}
+                          </div>
+                        </div>
+                        {item.result.ourAd.rank > 0 && (
+                          <div className="space-y-2">
+                            <div className="bg-blue-50 rounded p-2">
+                              <div className="text-xs font-medium text-blue-600 mb-0.5">제목 평가</div>
+                              <p className="text-xs text-gray-700">{item.result.ourAd.evaluation.title}</p>
+                            </div>
+                            <div className="bg-blue-50 rounded p-2">
+                              <div className="text-xs font-medium text-blue-600 mb-0.5">설명 평가</div>
+                              <p className="text-xs text-gray-700">{item.result.ourAd.evaluation.description}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 경쟁사 분석 */}
+                      {item.result.competitorAnalysis && (
+                        <div className="bg-white rounded-lg p-3 border-l-4 border-violet-500">
+                          <div className="text-sm font-bold text-violet-700 mb-2">경쟁사 광고 분석</div>
+                          <div className="space-y-1">
+                            {item.result.competitorAnalysis.split('\n').filter(line => line.trim()).slice(0, 5).map((line, i) => (
+                              <div key={i} className="bg-violet-50 rounded p-2 text-xs text-gray-700">{line.trim()}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 개선 제안 */}
+                      {item.result.adSuggestions?.length > 0 && (
+                        <div className="bg-white rounded-lg p-3 border-l-4 border-green-500">
+                          <div className="text-sm font-bold text-green-700 mb-2">광고 개선 제안</div>
+                          <div className="space-y-2">
+                            {item.result.adSuggestions.slice(0, 3).map((suggestion, i) => (
+                              <div key={i} className="bg-green-50 rounded p-2">
+                                <div className="font-medium text-green-800 text-xs">{i + 1}. {suggestion.title}</div>
+                                <p className="text-xs text-gray-600 mt-0.5">{suggestion.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 일괄 동작 버튼 */}
+      <div className="bg-gray-50 rounded-lg p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-gray-700">
+          입력 완료된 카드: <span className="font-bold">{batchableCount}개</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onSkipAll}
+            className="px-4 py-2 text-sm border border-gray-300 text-gray-600 rounded hover:bg-gray-100"
+          >
+            모두 건너뛰기
+          </button>
+          <button
+            onClick={onAnalyzeAll}
+            disabled={batchableCount === 0 || batchLoading}
+            className={`px-5 py-2 text-sm font-semibold rounded transition-all ${
+              batchableCount > 0 && !batchLoading
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow hover:shadow-md'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            {batchLoading ? '일괄 분석 중...' : `전체 분석 (${batchableCount})`}
+          </button>
+        </div>
+      </div>
+
+      {/* 네비게이션 */}
+      <div className="flex justify-between pt-6">
+        <button
+          onClick={onPrev}
+          className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+        >
+          ← 이전
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!canProceed}
+          className={`px-8 py-3 font-semibold rounded-lg shadow-md transition-all ${
+            canProceed
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          다음 단계로
         </button>
       </div>
     </div>
@@ -2706,6 +3272,7 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, keywordType, shopping
     'marketingInsights',
     'actionStrategies',
     'actionPlan',
+    'brandComparison',
     'conclusion',
   ]);
 
@@ -3444,6 +4011,233 @@ const IntegratedReport: React.FC<ReportProps> = ({ report, keywordType, shopping
         </div>
       </SectionCard>
 
+      {/* 자사 vs 경쟁사 종합 비교 (브랜드 유형 전용) */}
+      {keywordType === 'brand' && report.brandComparison && (
+        <SectionCard id="brandComparison" title="10. 자사 vs 경쟁사 종합 비교" bgColor="from-cyan-600 to-blue-600">
+          {/* SOV 분석 */}
+          {report.brandComparison.sov && (
+            <div className="mb-6">
+              <h5 className="font-bold text-gray-800 mb-3">SOV (Share of Voice)</h5>
+              <div className="bg-blue-50 rounded-lg p-4">
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="text-3xl font-bold text-blue-700">{report.brandComparison.sov.ownShare}%</div>
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-700 mb-1">자사 SOV</div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="bg-gradient-to-r from-blue-500 to-blue-700 h-3 rounded-full" style={{ width: `${Math.min(report.brandComparison.sov.ownShare, 100)}%` }}></div>
+                    </div>
+                  </div>
+                </div>
+                {report.brandComparison.sov.competitorShares?.length > 0 && (
+                  <div className="space-y-2">
+                    {report.brandComparison.sov.competitorShares.map((c, i) => (
+                      <div key={i} className="flex items-center gap-4">
+                        <div className="w-24 text-sm font-medium text-gray-700 truncate">{c.brandKeyword}</div>
+                        <div className="flex-1">
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="bg-gray-500 h-2 rounded-full" style={{ width: `${Math.min(c.share, 100)}%` }}></div>
+                          </div>
+                        </div>
+                        <div className="w-12 text-sm text-gray-700 text-right">{c.share}%</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {report.brandComparison.sov.interpretation && (
+                  <p className="text-sm text-gray-700 mt-3 leading-relaxed">{report.brandComparison.sov.interpretation}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 비교 매트릭스 */}
+          {report.brandComparison.comparisonMatrix?.length > 0 && (
+            <div className="mb-6">
+              <h5 className="font-bold text-gray-800 mb-3">비교 매트릭스</h5>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-gray-200 rounded-lg overflow-hidden text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-gray-700 font-semibold">차원</th>
+                      <th className="px-3 py-2 text-left text-blue-700 font-semibold">자사</th>
+                      <th className="px-3 py-2 text-left text-gray-700 font-semibold">경쟁사</th>
+                      <th className="px-3 py-2 text-center text-gray-700 font-semibold">우위</th>
+                      <th className="px-3 py-2 text-left text-gray-700 font-semibold">인사이트</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.brandComparison.comparisonMatrix.map((row, i) => (
+                      <tr key={i} className="border-t border-gray-200">
+                        <td className="px-3 py-2 font-medium text-gray-700">{row.metric}</td>
+                        <td className="px-3 py-2 text-blue-700 font-semibold">{row.ownValue}</td>
+                        <td className="px-3 py-2 text-gray-700">{(row.competitors || []).map(c => `${c.brandKeyword}: ${c.value}`).join(' / ')}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                            row.winner === 'own' ? 'bg-green-100 text-green-700' :
+                            row.winner === 'competitor' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {row.winner === 'own' ? '자사' : row.winner === 'competitor' ? '경쟁사' : '비등'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs">{row.insight}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 자사 강점 / 약점 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {report.brandComparison.ownStrengths?.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h6 className="font-bold text-green-800 mb-2">★ 자사 강점</h6>
+                <ul className="text-sm text-gray-800 space-y-1 list-disc list-inside">
+                  {report.brandComparison.ownStrengths.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+            {report.brandComparison.ownWeaknesses?.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h6 className="font-bold text-red-800 mb-2">⚠ 자사 약점</h6>
+                <ul className="text-sm text-gray-800 space-y-1 list-disc list-inside">
+                  {report.brandComparison.ownWeaknesses.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* 경쟁사 프로필 카드 */}
+          {report.brandComparison.competitorProfiles?.length > 0 && (
+            <div className="mb-6">
+              <h5 className="font-bold text-gray-800 mb-3">경쟁사 프로필</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {report.brandComparison.competitorProfiles.map((p, i) => (
+                  <div key={i} className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-bold text-gray-800">{p.brandKeyword}</div>
+                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                        p.threatLevel === 'high' ? 'bg-red-100 text-red-700' :
+                        p.threatLevel === 'medium' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        위협도 {p.threatLevel === 'high' ? '높음' : p.threatLevel === 'medium' ? '중간' : '낮음'}
+                      </span>
+                    </div>
+                    {p.positioning && <p className="text-xs text-gray-600 mb-2 italic">{p.positioning}</p>}
+                    {p.strengths?.length > 0 && (
+                      <div className="mb-2">
+                        <div className="text-xs font-semibold text-green-700 mb-1">강점</div>
+                        <ul className="text-xs text-gray-700 space-y-0.5 list-disc list-inside">
+                          {p.strengths.slice(0, 3).map((s, j) => <li key={j}>{s}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {p.weaknesses?.length > 0 && (
+                      <div className="mb-2">
+                        <div className="text-xs font-semibold text-red-700 mb-1">약점</div>
+                        <ul className="text-xs text-gray-700 space-y-0.5 list-disc list-inside">
+                          {p.weaknesses.slice(0, 3).map((w, j) => <li key={j}>{w}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {p.counterStrategy && (
+                      <div className="mt-2 bg-blue-50 rounded p-2">
+                        <div className="text-xs font-semibold text-blue-700 mb-0.5">대응 전략</div>
+                        <p className="text-xs text-gray-800">{p.counterStrategy}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 차별화 축 */}
+          {report.brandComparison.differentiationAxes?.length > 0 && (
+            <div className="mb-6">
+              <h5 className="font-bold text-gray-800 mb-3">차별화 축</h5>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-gray-200 rounded-lg text-sm">
+                  <thead className="bg-purple-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-purple-800 font-semibold">차원</th>
+                      <th className="px-3 py-2 text-left text-blue-700 font-semibold">자사</th>
+                      <th className="px-3 py-2 text-left text-gray-700 font-semibold">경쟁사</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.brandComparison.differentiationAxes.map((d, i) => (
+                      <tr key={i} className="border-t border-gray-200">
+                        <td className="px-3 py-2 font-medium text-purple-700">{d.axis}</td>
+                        <td className="px-3 py-2 text-blue-700">{d.ownPosition}</td>
+                        <td className="px-3 py-2 text-gray-700">{d.competitorPosition}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 공략 키워드 */}
+          {report.brandComparison.conquestKeywords?.length > 0 && (
+            <div className="mb-6">
+              <h5 className="font-bold text-gray-800 mb-3">공략 가능 키워드</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {report.brandComparison.conquestKeywords.map((c, i) => (
+                  <div key={i} className="bg-emerald-50 border border-emerald-200 rounded p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-emerald-800">{c.keyword}</span>
+                      <span className="text-xs text-gray-500">현재 리더: {c.currentLeader}</span>
+                    </div>
+                    {c.rationale && <p className="text-xs text-gray-700">{c.rationale}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 브랜드별 감성 비교 */}
+          {report.brandComparison.sentimentComparison?.length > 0 && (
+            <div className="mb-2">
+              <h5 className="font-bold text-gray-800 mb-3">브랜드별 감성 비교</h5>
+              <div className="space-y-3">
+                {report.brandComparison.sentimentComparison.map((s, i) => (
+                  <div key={i} className="bg-white border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-bold text-gray-800">{s.brandKeyword}</div>
+                      <div className="text-xs text-gray-500">긍정 {s.positive}% · 중립 {s.neutral}% · 부정 {s.negative}%</div>
+                    </div>
+                    <div className="w-full flex h-3 rounded-full overflow-hidden mb-2">
+                      <div className="bg-green-500" style={{ width: `${s.positive}%` }}></div>
+                      <div className="bg-gray-400" style={{ width: `${s.neutral}%` }}></div>
+                      <div className="bg-red-500" style={{ width: `${s.negative}%` }}></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {s.topPositiveKeywords?.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-green-700">긍정 키워드: </span>
+                          <span className="text-gray-700">{s.topPositiveKeywords.join(', ')}</span>
+                        </div>
+                      )}
+                      {s.topNegativeKeywords?.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-red-700">부정 키워드: </span>
+                          <span className="text-gray-700">{s.topNegativeKeywords.join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </SectionCard>
+      )}
+
       {/* 14. 종합 결론 */}
       <SectionCard id="conclusion" title="9. 종합 결론" bgColor="from-gray-800 to-gray-900">
         <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-6 mb-4">
@@ -3506,12 +4300,38 @@ export default function IntegratedAnalysisPage() {
   const [analysisState, setAnalysisState] = useState<IntegratedAnalysisState>(initialAnalysisState);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [brandAdFiles, setBrandAdFiles] = useState<Record<number, File | null>>({});
   const [pptLoading, setPptLoading] = useState(false);
 
   // 상태 업데이트 헬퍼
   const updateState = (updates: Partial<IntegratedAnalysisState>) => {
     setAnalysisState((prev) => ({ ...prev, ...updates }));
   };
+
+  // Step 4 진입 시 브랜드 유형이면 brandAdAnalysis 자동 초기화
+  useEffect(() => {
+    if (
+      currentStep === 4 &&
+      analysisState.keywordType === 'brand' &&
+      analysisState.brandAdAnalysis === null &&
+      analysisState.keyword
+    ) {
+      const validCompetitors = analysisState.competitorBrands.filter((b) => b.trim());
+      const allBrands = [analysisState.keyword, ...validCompetitors];
+      const items: BrandAdAnalysisItem[] = allBrands.map((brand, i) => ({
+        brandKeyword: brand,
+        isOwnBrand: i === 0,
+        inputMode: 'text',
+        adText: '',
+        hasImage: false,
+        result: null,
+        loading: false,
+        skipped: false,
+      }));
+      updateState({ brandAdAnalysis: items });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, analysisState.keywordType, analysisState.brandAdAnalysis, analysisState.keyword]);
 
   // 특정 단계 이후의 모든 데이터를 리셋하는 함수
   const resetFromStep = (fromStep: WizardStep) => {
@@ -3524,11 +4344,13 @@ export default function IntegratedAnalysisPage() {
         keywordExpansionGPTAnalysis: null,
         brandComparison: null,
         brandKeywordFilters: [],
+        brandKeywordExpansionGPT: null,
       });
     }
     if (fromStep <= 3) {
       updateState({
         contentAnalysis: { blog: null, cafe: null, youtube: null, news: null },
+        brandContentComparisonGPT: null,
       });
     }
     if (fromStep <= 4) {
@@ -3539,8 +4361,11 @@ export default function IntegratedAnalysisPage() {
         shoppingAnalysis: null,
         naverShoppingText: '',
         coupangShoppingText: '',
+        brandAdAnalysis: null,
+        brandAdAnalysisBatchLoading: false,
       });
       setSelectedFile(null);
+      setBrandAdFiles({});
     }
     if (fromStep <= 5) {
       updateState({ integratedReport: null });
@@ -3567,6 +4392,8 @@ export default function IntegratedAnalysisPage() {
         naverShoppingText: '',
         coupangShoppingText: '',
         brandComparison: null,
+        brandKeywordExpansionGPT: null,
+        brandContentComparisonGPT: null,
       };
       // 브랜드 유형으로 변경 시 경쟁사 브랜드 배열 초기화
       if (newType === 'brand') {
@@ -3708,6 +4535,206 @@ export default function IntegratedAnalysisPage() {
     }
   };
 
+  // ===== Step 4: 브랜드별 광고 분석 (브랜드 유형 전용) =====
+
+  // Step 4 진입 시 brandAdAnalysis 초기화
+  const initializeBrandAdAnalysis = () => {
+    if (analysisState.brandAdAnalysis !== null) return;
+    const validCompetitors = analysisState.competitorBrands.filter(b => b.trim());
+    const allBrands = [analysisState.keyword, ...validCompetitors];
+    const items: BrandAdAnalysisItem[] = allBrands.map((brand, i) => ({
+      brandKeyword: brand,
+      isOwnBrand: i === 0,
+      inputMode: 'text',
+      adText: '',
+      hasImage: false,
+      result: null,
+      loading: false,
+      skipped: false,
+    }));
+    updateState({ brandAdAnalysis: items });
+  };
+
+  const handleBrandAdItemUpdate = (idx: number, patch: Partial<BrandAdAnalysisItem>) => {
+    const items = analysisState.brandAdAnalysis;
+    if (!items) return;
+    const newItems = items.map((item, i) => (i === idx ? { ...item, ...patch } : item));
+    updateState({ brandAdAnalysis: newItems });
+  };
+
+  const handleBrandAdItemFileSelect = (idx: number, file: File | null) => {
+    setBrandAdFiles((prev) => ({ ...prev, [idx]: file }));
+  };
+
+  // 단일 브랜드 분석 실행
+  const handleBrandAdAnalyzeOne = async (idx: number) => {
+    const items = analysisState.brandAdAnalysis;
+    if (!items) return;
+    const item = items[idx];
+    if (!item) return;
+
+    // 입력 검증
+    if (item.inputMode === 'text' && !item.adText.trim()) {
+      setError('광고 텍스트를 입력해주세요.');
+      return;
+    }
+    if (item.inputMode === 'image' && !brandAdFiles[idx]) {
+      setError('이미지를 업로드해주세요.');
+      return;
+    }
+
+    handleBrandAdItemUpdate(idx, { loading: true });
+
+    try {
+      const formData = new FormData();
+      formData.append('keyword', item.brandKeyword);
+      formData.append('companyName', item.brandKeyword);
+      formData.append('inputMode', item.inputMode);
+      if (item.inputMode === 'text') {
+        formData.append('adText', item.adText);
+      } else if (brandAdFiles[idx]) {
+        formData.append('image', brandAdFiles[idx]!);
+      }
+
+      const response = await axios.post('/api/ad-analysis', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      // 결과 저장 (상태 참조 시 최신 items 사용을 위해 함수형 업데이트)
+      setAnalysisState((prev) => {
+        const newItems = (prev.brandAdAnalysis || []).map((it, i) =>
+          i === idx ? { ...it, result: response.data, loading: false, skipped: false } : it
+        );
+        // 자사 결과는 adAnalysis에도 미러링
+        const isOwn = newItems[idx]?.isOwnBrand;
+        return {
+          ...prev,
+          brandAdAnalysis: newItems,
+          ...(isOwn ? { adAnalysis: response.data } : {}),
+        };
+      });
+    } catch (err) {
+      console.error('브랜드 광고 분석 오류:', err);
+      setError(`${item.brandKeyword} 광고 분석 중 오류가 발생했습니다.`);
+      handleBrandAdItemUpdate(idx, { loading: false });
+    }
+  };
+
+  // 일괄 분석 실행 (입력 있는 모든 카드 병렬)
+  const handleBrandAdAnalyzeBatch = async () => {
+    const items = analysisState.brandAdAnalysis;
+    if (!items) return;
+
+    const targetIndices = items
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item, idx }) => {
+        if (item.result || item.skipped) return false;
+        if (item.inputMode === 'text') return !!item.adText.trim();
+        return !!brandAdFiles[idx];
+      })
+      .map(({ idx }) => idx);
+
+    if (targetIndices.length === 0) return;
+
+    updateState({ brandAdAnalysisBatchLoading: true });
+
+    // 모든 대상 카드를 loading 상태로 설정
+    setAnalysisState((prev) => ({
+      ...prev,
+      brandAdAnalysis: (prev.brandAdAnalysis || []).map((it, i) =>
+        targetIndices.includes(i) ? { ...it, loading: true } : it
+      ),
+    }));
+
+    try {
+      const results = await Promise.all(
+        targetIndices.map(async (idx) => {
+          const item = items[idx];
+          const formData = new FormData();
+          formData.append('keyword', item.brandKeyword);
+          formData.append('companyName', item.brandKeyword);
+          formData.append('inputMode', item.inputMode);
+          if (item.inputMode === 'text') {
+            formData.append('adText', item.adText);
+          } else if (brandAdFiles[idx]) {
+            formData.append('image', brandAdFiles[idx]!);
+          }
+          try {
+            const response = await axios.post('/api/ad-analysis', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            return { idx, result: response.data as AdAnalysisResult, error: null };
+          } catch (err) {
+            console.error(`${item.brandKeyword} 광고 분석 오류:`, err);
+            return { idx, result: null, error: (err as Error).message };
+          }
+        })
+      );
+
+      // 결과 일괄 반영
+      setAnalysisState((prev) => {
+        const newItems = (prev.brandAdAnalysis || []).map((it, i) => {
+          const found = results.find((r) => r.idx === i);
+          if (!found) return it;
+          return { ...it, result: found.result, loading: false };
+        });
+        const ownResult = results.find((r) => newItems[r.idx]?.isOwnBrand && r.result);
+        return {
+          ...prev,
+          brandAdAnalysis: newItems,
+          brandAdAnalysisBatchLoading: false,
+          ...(ownResult ? { adAnalysis: ownResult.result! } : {}),
+        };
+      });
+
+      const failed = results.filter((r) => r.error);
+      if (failed.length > 0) {
+        setError(`${failed.length}개 브랜드 분석에 실패했습니다.`);
+      }
+    } catch (err) {
+      console.error('일괄 광고 분석 오류:', err);
+      setError('일괄 광고 분석 중 오류가 발생했습니다.');
+      updateState({ brandAdAnalysisBatchLoading: false });
+    }
+  };
+
+  // 개별 카드 건너뛰기
+  const handleBrandAdItemSkip = (idx: number) => {
+    handleBrandAdItemUpdate(idx, { skipped: true, loading: false });
+  };
+
+  // 전체 건너뛰기
+  const handleBrandAdSkipAll = () => {
+    const items = analysisState.brandAdAnalysis;
+    if (!items) {
+      updateState({ skipAdAnalysis: true });
+      if (!completedSteps.includes(4)) {
+        setCompletedSteps((prev) => [...prev, 4]);
+      }
+      return;
+    }
+    setAnalysisState((prev) => ({
+      ...prev,
+      brandAdAnalysis: (prev.brandAdAnalysis || []).map((it) =>
+        it.result ? it : { ...it, skipped: true }
+      ),
+      skipAdAnalysis: true,
+    }));
+    if (!completedSteps.includes(4)) {
+      setCompletedSteps((prev) => [...prev, 4]);
+    }
+  };
+
+  // 카드 재분석 (결과만 비우고 입력은 유지)
+  const handleBrandAdItemReanalyze = (idx: number) => {
+    handleBrandAdItemUpdate(idx, { result: null });
+    // 자사 결과 미러링 해제
+    const item = analysisState.brandAdAnalysis?.[idx];
+    if (item?.isOwnBrand) {
+      updateState({ adAnalysis: null });
+    }
+  };
+
   // Step 2: 브랜드별 키워드 확장 분석 (브랜드 유형용)
   const handleBrandKeywordExpansion = async () => {
     updateState({ brandComparisonLoading: true });
@@ -3772,10 +4799,36 @@ export default function IntegratedAnalysisPage() {
       if (filteredOwnExpansion) {
         await handleKeywordExpansionGPTAnalysis(filteredOwnExpansion);
       }
+
+      // 브랜드 비교 GPT 분석 호출 (신규)
+      await handleBrandKeywordComparisonGPT({
+        ownBrand: ownBrandData,
+        competitors: competitorData,
+      });
     } catch (err) {
       console.error('브랜드 키워드 확장 오류:', err);
       setError('브랜드 키워드 확장 분석 중 오류가 발생했습니다.');
       updateState({ brandComparisonLoading: false });
+    }
+  };
+
+  // Step 2: 브랜드 키워드 비교 GPT 분석 (신규)
+  const handleBrandKeywordComparisonGPT = async (brandComparison: BrandComparisonResult) => {
+    updateState({ brandKeywordExpansionGPTLoading: true });
+    try {
+      const response = await axios.post('/api/brand-keyword-comparison-analysis', {
+        ownBrand: analysisState.keyword,
+        competitors: analysisState.competitorBrands.filter(b => b.trim()),
+        brandComparison,
+        brandKeywordFilters: analysisState.brandKeywordFilters,
+      });
+      updateState({
+        brandKeywordExpansionGPT: response.data.analysis,
+        brandKeywordExpansionGPTLoading: false,
+      });
+    } catch (err) {
+      console.error('브랜드 키워드 비교 GPT 분석 오류:', err);
+      updateState({ brandKeywordExpansionGPTLoading: false });
     }
   };
 
@@ -3885,6 +4938,12 @@ export default function IntegratedAnalysisPage() {
         contentAnalysisLoading: { blog: false, cafe: false, youtube: false, news: false },
         brandComparisonLoading: false,
       });
+
+      // 브랜드 콘텐츠 비교 GPT 분석 호출 (신규)
+      await handleBrandContentComparisonGPT({
+        ownBrand: ownBrandData,
+        competitors: competitorData,
+      });
     } catch (err) {
       console.error('브랜드 콘텐츠 분석 오류:', err);
       setError('브랜드 콘텐츠 분석 중 오류가 발생했습니다.');
@@ -3892,6 +4951,24 @@ export default function IntegratedAnalysisPage() {
         contentAnalysisLoading: { blog: false, cafe: false, youtube: false, news: false },
         brandComparisonLoading: false,
       });
+    }
+  };
+
+  // Step 3: 브랜드 콘텐츠 비교 GPT 분석 (신규)
+  const handleBrandContentComparisonGPT = async (brandComparison: BrandComparisonResult) => {
+    updateState({ brandContentComparisonGPTLoading: true });
+    try {
+      const response = await axios.post('/api/brand-content-comparison-analysis', {
+        ownBrand: analysisState.keyword,
+        brandComparison,
+      });
+      updateState({
+        brandContentComparisonGPT: response.data.analysis,
+        brandContentComparisonGPTLoading: false,
+      });
+    } catch (err) {
+      console.error('브랜드 콘텐츠 비교 GPT 분석 오류:', err);
+      updateState({ brandContentComparisonGPTLoading: false });
     }
   };
 
@@ -4031,6 +5108,15 @@ export default function IntegratedAnalysisPage() {
         adAnalysis: analysisState.adAnalysis || undefined,
         shoppingAnalysis: analysisState.shoppingAnalysis || undefined,
         brandComparison: summarizeBrandComparison(analysisState.brandComparison),
+        brandKeywordExpansionGPT: analysisState.brandKeywordExpansionGPT || undefined,
+        brandContentComparisonGPT: analysisState.brandContentComparisonGPT || undefined,
+        brandAdAnalysis: analysisState.brandAdAnalysis
+          ?.filter((i) => i.result)
+          .map((i) => ({
+            brandKeyword: i.brandKeyword,
+            isOwnBrand: i.isOwnBrand,
+            result: i.result!,
+          })) || undefined,
       };
 
       const response = await axios.post('/api/integrated-report', requestData);
@@ -4112,7 +5198,17 @@ export default function IntegratedAnalysisPage() {
       const response = await fetch('/api/generate-ppt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report: analysisState.integratedReport, shoppingAnalysis: analysisState.shoppingAnalysis || undefined }),
+        body: JSON.stringify({
+          report: analysisState.integratedReport,
+          shoppingAnalysis: analysisState.shoppingAnalysis || undefined,
+          brandAdAnalysis: analysisState.brandAdAnalysis
+            ?.filter((i) => i.result)
+            .map((i) => ({
+              brandKeyword: i.brandKeyword,
+              isOwnBrand: i.isOwnBrand,
+              result: i.result!,
+            })) || undefined,
+        }),
       });
 
       if (!response.ok) throw new Error('PPT 생성 실패');
@@ -4139,8 +5235,11 @@ export default function IntegratedAnalysisPage() {
   const currentLoadingMessage =
     analysisState.keywordExpansionLoading ? '연관 키워드를 분석 중입니다...' :
     analysisState.keywordExpansionGPTLoading ? 'AI가 키워드 데이터를 분석 중입니다...' :
+    analysisState.brandKeywordExpansionGPTLoading ? 'AI가 브랜드별 키워드를 비교 분석 중입니다...' :
     isAnyContentLoading ? '채널별 콘텐츠를 분석 중입니다...' :
+    analysisState.brandContentComparisonGPTLoading ? 'AI가 브랜드별 콘텐츠를 비교 분석 중입니다...' :
     analysisState.adAnalysisLoading ? '광고를 분석 중입니다...' :
+    analysisState.brandAdAnalysisBatchLoading ? '브랜드별 광고를 일괄 분석 중입니다...' :
     analysisState.shoppingAnalysisLoading ? '쇼핑 검색 결과를 분석 중입니다...' :
     analysisState.brandComparisonLoading ? '브랜드 비교 분석 중입니다...' :
     analysisState.reportLoading ? '종합 리포트를 생성 중입니다...' :
@@ -4240,6 +5339,8 @@ export default function IntegratedAnalysisPage() {
                 brandComparison={analysisState.brandComparison}
                 loading={analysisState.brandComparisonLoading}
                 brandKeywordFilters={analysisState.brandKeywordFilters}
+                brandKeywordExpansionGPT={analysisState.brandKeywordExpansionGPT}
+                brandKeywordExpansionGPTLoading={analysisState.brandKeywordExpansionGPTLoading}
                 onFilterChange={handleBrandFilterChange}
                 onFilterToggle={handleBrandFilterToggle}
                 onAnalyze={handleBrandKeywordExpansion}
@@ -4268,6 +5369,8 @@ export default function IntegratedAnalysisPage() {
                 brandComparison={analysisState.brandComparison}
                 selectedChannels={analysisState.selectedChannels}
                 loading={analysisState.brandComparisonLoading}
+                brandContentComparisonGPT={analysisState.brandContentComparisonGPT}
+                brandContentComparisonGPTLoading={analysisState.brandContentComparisonGPTLoading}
                 onChannelToggle={handleChannelToggle}
                 onAnalyze={handleBrandContentAnalysis}
                 onReanalyze={handleReanalyzeStep3Brand}
@@ -4291,10 +5394,29 @@ export default function IntegratedAnalysisPage() {
               />
             )}
 
-            {currentStep === 4 && analysisState.keywordType !== 'shopping' && (
+            {currentStep === 4 && analysisState.keywordType === 'brand' && (
+              <Step4BrandAdAnalysis
+                ownBrand={analysisState.keyword}
+                competitorBrands={analysisState.competitorBrands}
+                brandAdAnalysis={analysisState.brandAdAnalysis}
+                batchLoading={analysisState.brandAdAnalysisBatchLoading}
+                brandAdFiles={brandAdFiles}
+                onItemUpdate={handleBrandAdItemUpdate}
+                onItemFileSelect={handleBrandAdItemFileSelect}
+                onAnalyzeOne={handleBrandAdAnalyzeOne}
+                onAnalyzeAll={handleBrandAdAnalyzeBatch}
+                onItemSkip={handleBrandAdItemSkip}
+                onSkipAll={handleBrandAdSkipAll}
+                onItemReanalyze={handleBrandAdItemReanalyze}
+                onPrev={() => goToStep(3)}
+                onNext={() => goToStep(5)}
+              />
+            )}
+
+            {currentStep === 4 && analysisState.keywordType === 'general' && (
               <Step4AdAnalysis
                 keyword={analysisState.keyword}
-                companyName={analysisState.keywordType === 'brand' ? analysisState.keyword : analysisState.companyName}
+                companyName={analysisState.companyName}
                 adAnalysis={analysisState.adAnalysis}
                 loading={analysisState.adAnalysisLoading}
                 adInputMode={analysisState.adInputMode}
@@ -4318,7 +5440,8 @@ export default function IntegratedAnalysisPage() {
             {(completedSteps.includes(3) || (currentStep === 4 && (
               analysisState.adAnalysis ||
               analysisState.skipAdAnalysis ||
-              analysisState.shoppingAnalysis
+              analysisState.shoppingAnalysis ||
+              (analysisState.brandAdAnalysis && analysisState.brandAdAnalysis.some(i => i.result || i.skipped))
             ))) && (
               <div className="mt-8 pt-6 border-t border-gray-200 text-center">
                 <button

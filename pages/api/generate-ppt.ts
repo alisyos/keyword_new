@@ -1,6 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import PptxGenJS from 'pptxgenjs';
-import { IntegratedReportData, KeywordType, ShoppingSearchAnalysisResult, ShoppingPlatformData } from '../../types/integrated-analysis';
+import { IntegratedReportData, KeywordType, ShoppingSearchAnalysisResult, ShoppingPlatformData, AdAnalysisResult } from '../../types/integrated-analysis';
+
+type BrandAdAnalysisPptItem = {
+  brandKeyword: string;
+  isOwnBrand: boolean;
+  result: AdAnalysisResult;
+};
 
 // 색상 테마
 const COLORS = {
@@ -69,7 +75,11 @@ export default async function handler(
   }
 
   try {
-    const { report, shoppingAnalysis } = req.body as { report: IntegratedReportData; shoppingAnalysis?: ShoppingSearchAnalysisResult };
+    const { report, shoppingAnalysis, brandAdAnalysis } = req.body as {
+      report: IntegratedReportData;
+      shoppingAnalysis?: ShoppingSearchAnalysisResult;
+      brandAdAnalysis?: BrandAdAnalysisPptItem[];
+    };
 
     if (!report) {
       return res.status(400).json({ error: 'Report data is required' });
@@ -148,6 +158,8 @@ export default async function handler(
       '3. 핵심 키워드 맵',
       '4. 채널별 콘텐츠 분석',
       pptLabels.tocMarket,
+      ...(keywordType === 'brand' && report.brandComparison ? ['자사 vs 경쟁사 종합 비교'] : []),
+      ...(keywordType === 'brand' && brandAdAnalysis && brandAdAnalysis.length > 0 ? ['브랜드별 광고 분석 비교'] : []),
       '6. 핵심 마케팅 인사이트',
       pptLabels.tocStrategy,
       '8. 90일 액션플랜',
@@ -823,13 +835,24 @@ export default async function handler(
         fontSize: 9, color: COLORS.slate, fontFace: 'Arial', bold: true,
       });
 
-      const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 5) || [];
-      players.forEach((player, idx) => {
-        slide7.addText(`• ${player}`, {
-          x: 0.6, y: 3.4 + idx * 0.28, w: 4.3, h: 0.25,
-          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+      // 브랜드 유형이고 brandSnapshots가 있으면 카드 형태로 표시
+      const brandSnapshots = (report.marketEnvironment?.competitionAnalysis as any)?.brandSnapshots;
+      if (keywordType === 'brand' && Array.isArray(brandSnapshots) && brandSnapshots.length > 0) {
+        brandSnapshots.slice(0, 4).forEach((b: any, idx: number) => {
+          slide7.addText(`• ${b.brand} (SOV ${b.sov}% | 긍정 ${b.sentiment?.positive ?? '-'}%)`, {
+            x: 0.6, y: 3.4 + idx * 0.3, w: 4.3, h: 0.28,
+            fontSize: 8, color: COLORS.dark, fontFace: 'Arial', bold: true,
+          });
         });
-      });
+      } else {
+        const players = report.marketEnvironment?.competitionAnalysis?.keyPlayers?.slice(0, 5) || [];
+        players.forEach((player, idx) => {
+          slide7.addText(`• ${player}`, {
+            x: 0.6, y: 3.4 + idx * 0.28, w: 4.3, h: 0.25,
+            fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+          });
+        });
+      }
 
       // 디지털 트렌드
       slide7.addShape('rect', {
@@ -867,6 +890,334 @@ export default async function handler(
 
       addPageNumber(slide7, 8);
       marketSectionEndSlide = 8; // 일반/브랜드는 1개 슬라이드
+    }
+
+    // ========== 브랜드 비교 슬라이드 (브랜드 유형 전용) ==========
+    if (keywordType === 'brand' && report.brandComparison) {
+      const bc = report.brandComparison;
+
+      // ---------- Slide 8a: SOV + 비교 매트릭스 ----------
+      const brandSlide1 = pptx.addSlide();
+      addSlideHeader(brandSlide1, '자사 vs 경쟁사 비교 (1/3)', 'SOV & Comparison Matrix');
+
+      // 좌측: SOV
+      brandSlide1.addText('SOV (검색 점유율)', {
+        x: 0.5, y: 1.1, w: 4.5, h: 0.3,
+        fontSize: 12, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      if (bc.sov) {
+        brandSlide1.addText(`자사: ${bc.sov.ownShare}%`, {
+          x: 0.5, y: 1.5, w: 4.5, h: 0.3,
+          fontSize: 14, color: COLORS.primary, fontFace: 'Arial', bold: true,
+        });
+        // 자사 SOV 막대
+        brandSlide1.addShape('rect', {
+          x: 0.5, y: 1.9, w: Math.max(0.05, Math.min(bc.sov.ownShare / 100, 1) * 4.5), h: 0.25,
+          fill: { color: COLORS.primary },
+        });
+
+        let yPos = 2.3;
+        (bc.sov.competitorShares || []).slice(0, 4).forEach((c) => {
+          brandSlide1.addText(`${c.brandKeyword}: ${c.share}%`, {
+            x: 0.5, y: yPos, w: 4.5, h: 0.25,
+            fontSize: 10, color: COLORS.dark, fontFace: 'Arial',
+          });
+          brandSlide1.addShape('rect', {
+            x: 0.5, y: yPos + 0.27, w: Math.max(0.05, Math.min(c.share / 100, 1) * 4.5), h: 0.2,
+            fill: { color: COLORS.slate },
+          });
+          yPos += 0.55;
+        });
+
+        if (bc.sov.interpretation) {
+          brandSlide1.addText(bc.sov.interpretation, {
+            x: 0.5, y: yPos + 0.1, w: 4.5, h: 1.2,
+            fontSize: 8, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+          });
+        }
+      }
+
+      // 우측: 비교 매트릭스
+      brandSlide1.addText('비교 매트릭스', {
+        x: 5.2, y: 1.1, w: 4.5, h: 0.3,
+        fontSize: 12, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      const matrixRows = (bc.comparisonMatrix || []).slice(0, 5);
+      if (matrixRows.length > 0) {
+        const matrixTableRows: any[] = [
+          [
+            { text: '차원', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 9 } },
+            { text: '자사', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 9 } },
+            { text: '경쟁사', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 9 } },
+            { text: '우위', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 9 } },
+          ],
+          ...matrixRows.map(r => [
+            { text: r.metric, options: { fontSize: 8, bold: true } },
+            { text: r.ownValue, options: { fontSize: 8, color: COLORS.primary } },
+            { text: (r.competitors || []).map((c: any) => `${c.brandKeyword}: ${c.value}`).join('\n'), options: { fontSize: 7 } },
+            { text: r.winner === 'own' ? '자사' : (r.winner === 'competitor' ? '경쟁' : '비등'), options: { fontSize: 8, bold: true, color: r.winner === 'own' ? COLORS.success : (r.winner === 'competitor' ? COLORS.danger : COLORS.slate) } },
+          ]),
+        ];
+
+        brandSlide1.addTable(matrixTableRows, {
+          x: 5.2, y: 1.5, w: 4.5, h: 3.8,
+          fontFace: 'Arial',
+          border: { type: 'solid', color: 'DDDDDD', pt: 0.5 },
+          colW: [1.0, 1.0, 1.8, 0.7],
+        });
+      }
+
+      addPageNumber(brandSlide1, marketSectionEndSlide + 1);
+
+      // ---------- Slide 8b: 자사 강·약점 + 경쟁사 프로필 ----------
+      const brandSlide2 = pptx.addSlide();
+      addSlideHeader(brandSlide2, '자사 vs 경쟁사 비교 (2/3)', 'Strengths/Weaknesses & Competitor Profiles');
+
+      // 상단: 자사 강·약점
+      brandSlide2.addShape('rect', {
+        x: 0.5, y: 1.0, w: 4.4, h: 1.6,
+        fill: { color: 'E8F5E9' },
+      });
+      brandSlide2.addText('★ 자사 강점', {
+        x: 0.6, y: 1.05, w: 4.2, h: 0.3,
+        fontSize: 11, color: COLORS.success, fontFace: 'Arial', bold: true,
+      });
+      (bc.ownStrengths || []).slice(0, 4).forEach((s, i) => {
+        brandSlide2.addText(`• ${s}`, {
+          x: 0.7, y: 1.4 + i * 0.28, w: 4.1, h: 0.25,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        });
+      });
+
+      brandSlide2.addShape('rect', {
+        x: 5.1, y: 1.0, w: 4.4, h: 1.6,
+        fill: { color: 'FFEBEE' },
+      });
+      brandSlide2.addText('⚠ 자사 약점', {
+        x: 5.2, y: 1.05, w: 4.2, h: 0.3,
+        fontSize: 11, color: COLORS.danger, fontFace: 'Arial', bold: true,
+      });
+      (bc.ownWeaknesses || []).slice(0, 4).forEach((w, i) => {
+        brandSlide2.addText(`• ${w}`, {
+          x: 5.3, y: 1.4 + i * 0.28, w: 4.1, h: 0.25,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial',
+        });
+      });
+
+      // 하단: 경쟁사 프로필 카드 (최대 3개)
+      const competitorProfiles = (bc.competitorProfiles || []).slice(0, 3);
+      brandSlide2.addText('경쟁사 프로필', {
+        x: 0.5, y: 2.75, w: 9, h: 0.3,
+        fontSize: 11, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      const cardWidth = competitorProfiles.length > 0 ? 9.0 / competitorProfiles.length - 0.15 : 3;
+      competitorProfiles.forEach((p, idx) => {
+        const cardX = 0.5 + idx * (cardWidth + 0.15);
+        brandSlide2.addShape('rect', {
+          x: cardX, y: 3.1, w: cardWidth, h: 2.3,
+          fill: { color: 'F5F5F5' },
+          line: { color: COLORS.slate, width: 1 },
+        });
+        brandSlide2.addText(p.brandKeyword, {
+          x: cardX + 0.1, y: 3.15, w: cardWidth - 0.2, h: 0.3,
+          fontSize: 11, color: COLORS.dark, fontFace: 'Arial', bold: true,
+        });
+        const threatColor = p.threatLevel === 'high' ? COLORS.danger : (p.threatLevel === 'medium' ? COLORS.warning : COLORS.slate);
+        const threatLabel = p.threatLevel === 'high' ? '위협 높음' : (p.threatLevel === 'medium' ? '위협 중간' : '위협 낮음');
+        brandSlide2.addText(threatLabel, {
+          x: cardX + 0.1, y: 3.45, w: cardWidth - 0.2, h: 0.25,
+          fontSize: 8, color: threatColor, fontFace: 'Arial', bold: true,
+        });
+        if (p.positioning) {
+          brandSlide2.addText(p.positioning, {
+            x: cardX + 0.1, y: 3.7, w: cardWidth - 0.2, h: 0.5,
+            fontSize: 8, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+          });
+        }
+        // 강점
+        brandSlide2.addText('강점', {
+          x: cardX + 0.1, y: 4.25, w: cardWidth - 0.2, h: 0.2,
+          fontSize: 7, color: COLORS.success, fontFace: 'Arial', bold: true,
+        });
+        const strJoined = (p.strengths || []).slice(0, 2).map(s => `• ${s}`).join('\n');
+        brandSlide2.addText(strJoined, {
+          x: cardX + 0.1, y: 4.45, w: cardWidth - 0.2, h: 0.4,
+          fontSize: 7, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+        });
+        // 대응
+        brandSlide2.addText('대응 전략', {
+          x: cardX + 0.1, y: 4.9, w: cardWidth - 0.2, h: 0.2,
+          fontSize: 7, color: COLORS.primary, fontFace: 'Arial', bold: true,
+        });
+        if (p.counterStrategy) {
+          brandSlide2.addText(p.counterStrategy, {
+            x: cardX + 0.1, y: 5.1, w: cardWidth - 0.2, h: 0.3,
+            fontSize: 7, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+          });
+        }
+      });
+
+      addPageNumber(brandSlide2, marketSectionEndSlide + 2);
+
+      // ---------- Slide 8c: 차별화 축 + 감성 비교 ----------
+      const brandSlide3 = pptx.addSlide();
+      addSlideHeader(brandSlide3, '자사 vs 경쟁사 비교 (3/3)', 'Differentiation & Sentiment');
+
+      // 좌측: 차별화 축 표
+      brandSlide3.addText('차별화 축', {
+        x: 0.5, y: 1.05, w: 4.5, h: 0.3,
+        fontSize: 12, color: COLORS.secondary, fontFace: 'Arial', bold: true,
+      });
+
+      const diffAxes = (bc.differentiationAxes || []).slice(0, 5);
+      if (diffAxes.length > 0) {
+        const diffRows: any[] = [
+          [
+            { text: '차원', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.secondary }, fontSize: 9 } },
+            { text: '자사', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.secondary }, fontSize: 9 } },
+            { text: '경쟁사', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.secondary }, fontSize: 9 } },
+          ],
+          ...diffAxes.map(d => [
+            { text: d.axis, options: { fontSize: 8, bold: true } },
+            { text: d.ownPosition, options: { fontSize: 8, color: COLORS.primary } },
+            { text: d.competitorPosition, options: { fontSize: 8 } },
+          ]),
+        ];
+
+        brandSlide3.addTable(diffRows, {
+          x: 0.5, y: 1.4, w: 4.5, h: 3.0,
+          fontFace: 'Arial',
+          border: { type: 'solid', color: 'DDDDDD', pt: 0.5 },
+          colW: [1.2, 1.6, 1.7],
+        });
+      }
+
+      // 공략 키워드
+      brandSlide3.addText('공략 가능 키워드', {
+        x: 0.5, y: 4.55, w: 4.5, h: 0.25,
+        fontSize: 10, color: COLORS.success, fontFace: 'Arial', bold: true,
+      });
+      const conquestText = (bc.conquestKeywords || []).slice(0, 5).map(c => `• ${c.keyword} (현재 리더: ${c.currentLeader})`).join('\n');
+      brandSlide3.addText(conquestText || '데이터 없음', {
+        x: 0.5, y: 4.8, w: 4.5, h: 1.2,
+        fontSize: 8, color: COLORS.dark, fontFace: 'Arial', valign: 'top',
+      });
+
+      // 우측: 감성 비교
+      brandSlide3.addText('브랜드별 감성 비교', {
+        x: 5.2, y: 1.05, w: 4.5, h: 0.3,
+        fontSize: 12, color: COLORS.primary, fontFace: 'Arial', bold: true,
+      });
+
+      const sentRows = (bc.sentimentComparison || []).slice(0, 4);
+      let sentY = 1.4;
+      sentRows.forEach((s) => {
+        brandSlide3.addText(`${s.brandKeyword}  (긍 ${s.positive}% · 부 ${s.negative}%)`, {
+          x: 5.2, y: sentY, w: 4.5, h: 0.22,
+          fontSize: 9, color: COLORS.dark, fontFace: 'Arial', bold: true,
+        });
+        // Stacked bar
+        const totalW = 4.5;
+        const posW = totalW * (s.positive / 100);
+        const neuW = totalW * (s.neutral / 100);
+        const negW = totalW * (s.negative / 100);
+        brandSlide3.addShape('rect', { x: 5.2, y: sentY + 0.23, w: Math.max(0.01, posW), h: 0.18, fill: { color: COLORS.success } });
+        brandSlide3.addShape('rect', { x: 5.2 + posW, y: sentY + 0.23, w: Math.max(0.01, neuW), h: 0.18, fill: { color: COLORS.slate } });
+        brandSlide3.addShape('rect', { x: 5.2 + posW + neuW, y: sentY + 0.23, w: Math.max(0.01, negW), h: 0.18, fill: { color: COLORS.danger } });
+
+        // 상위 키워드
+        const posKw = (s.topPositiveKeywords || []).slice(0, 3).join(', ');
+        const negKw = (s.topNegativeKeywords || []).slice(0, 3).join(', ');
+        if (posKw) {
+          brandSlide3.addText(`긍정: ${posKw}`, {
+            x: 5.2, y: sentY + 0.45, w: 4.5, h: 0.22,
+            fontSize: 7, color: COLORS.success, fontFace: 'Arial',
+          });
+        }
+        if (negKw) {
+          brandSlide3.addText(`부정: ${negKw}`, {
+            x: 5.2, y: sentY + 0.65, w: 4.5, h: 0.22,
+            fontSize: 7, color: COLORS.danger, fontFace: 'Arial',
+          });
+        }
+        sentY += 1.05;
+      });
+
+      addPageNumber(brandSlide3, marketSectionEndSlide + 3);
+
+      marketSectionEndSlide += 3;
+    }
+
+    // ========== 브랜드별 광고 비교 슬라이드 (브랜드 유형 + brandAdAnalysis 존재 시) ==========
+    if (keywordType === 'brand' && brandAdAnalysis && brandAdAnalysis.length > 0) {
+      const adSlide = pptx.addSlide();
+      addSlideHeader(adSlide, '브랜드별 광고 분석 비교', 'Brand Ad Performance Comparison');
+
+      // 헤더 행 + 데이터 행
+      const headerRow = [
+        { text: '브랜드', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 10, valign: 'middle' as const, align: 'center' as const } },
+        { text: '구분', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 10, valign: 'middle' as const, align: 'center' as const } },
+        { text: '광고 순위', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 10, valign: 'middle' as const, align: 'center' as const } },
+        { text: '핵심 평가', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 10, valign: 'middle' as const, align: 'center' as const } },
+        { text: 'TOP 개선 제안', options: { bold: true, color: 'FFFFFF', fill: { color: COLORS.primary }, fontSize: 10, valign: 'middle' as const, align: 'center' as const } },
+      ];
+
+      const dataRows = brandAdAnalysis.map((item) => {
+        const rankStr = item.result.ourAd.rank > 0 ? `${item.result.ourAd.rank}위` : '미노출';
+        const rankColor = item.result.ourAd.rank > 0
+          ? (item.result.ourAd.rank <= 3 ? COLORS.success : COLORS.warning)
+          : COLORS.slate;
+        const titleEval = (item.result.ourAd.evaluation?.title || '').slice(0, 60);
+        const topSuggestion = item.result.adSuggestions?.[0];
+        const suggestionText = topSuggestion
+          ? `${topSuggestion.title}: ${topSuggestion.description.slice(0, 50)}`
+          : '제안 없음';
+        const rowFill = item.isOwnBrand ? 'E3F2FD' : 'FFFFFF';
+        return [
+          { text: item.brandKeyword, options: { bold: item.isOwnBrand, color: item.isOwnBrand ? COLORS.primary : COLORS.dark, fontSize: 10, fill: { color: rowFill }, valign: 'middle' as const } },
+          { text: item.isOwnBrand ? '자사' : '경쟁사', options: { bold: true, color: item.isOwnBrand ? COLORS.primary : COLORS.slate, fontSize: 9, fill: { color: rowFill }, valign: 'middle' as const, align: 'center' as const } },
+          { text: rankStr, options: { bold: true, color: rankColor, fontSize: 11, fill: { color: rowFill }, valign: 'middle' as const, align: 'center' as const } },
+          { text: titleEval || '데이터 없음', options: { fontSize: 8, color: COLORS.dark, fill: { color: rowFill }, valign: 'middle' as const } },
+          { text: suggestionText, options: { fontSize: 8, color: COLORS.dark, fill: { color: rowFill }, valign: 'middle' as const } },
+        ];
+      });
+
+      adSlide.addTable([headerRow, ...dataRows], {
+        x: 0.4, y: 1.1, w: 9.2, h: Math.min(4.5, 0.5 + dataRows.length * 0.7),
+        fontFace: 'Arial',
+        border: { type: 'solid', color: 'DDDDDD', pt: 0.5 },
+        colW: [1.5, 0.9, 1.1, 2.7, 3.0],
+        rowH: 0.6,
+      });
+
+      // 하단 인사이트 박스
+      const rankedBrands = brandAdAnalysis
+        .filter(b => b.result.ourAd.rank > 0)
+        .sort((a, b) => a.result.ourAd.rank - b.result.ourAd.rank);
+      const insightY = Math.min(5.6, 1.1 + 0.5 + dataRows.length * 0.7 + 0.3);
+      adSlide.addShape('rect', {
+        x: 0.4, y: insightY, w: 9.2, h: 0.6,
+        fill: { color: 'FFF8E1' },
+        line: { color: COLORS.warning, width: 1 },
+      });
+      const ownInAd = brandAdAnalysis.find(b => b.isOwnBrand);
+      const ownRank = ownInAd?.result.ourAd.rank || 0;
+      const competitorTopRank = rankedBrands.find(b => !b.isOwnBrand)?.result.ourAd.rank;
+      const insight = ownRank === 0
+        ? `자사 광고 미노출 — 경쟁사 광고 노출 ${rankedBrands.filter(b => !b.isOwnBrand).length}개 대비 시급한 광고 집행 필요`
+        : competitorTopRank && competitorTopRank < ownRank
+          ? `자사 광고 ${ownRank}위 vs 최상위 경쟁사 ${competitorTopRank}위 — 광고 카피·입찰 최적화로 상위 노출 확보 필요`
+          : `자사 광고 ${ownRank}위로 경쟁 우위. 현재 광고 전략 유지 + 경쟁사 진입 대비 방어 전략 필요`;
+      adSlide.addText(`📊 인사이트: ${insight}`, {
+        x: 0.5, y: insightY + 0.08, w: 9.0, h: 0.45,
+        fontSize: 9, color: COLORS.dark, fontFace: 'Arial', valign: 'middle',
+      });
+
+      addPageNumber(adSlide, marketSectionEndSlide + 1);
+      marketSectionEndSlide += 1;
     }
 
     // ========== Slides: 마케팅 인사이트 (각 인사이트별 1 슬라이드) ==========

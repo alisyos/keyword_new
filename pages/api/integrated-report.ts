@@ -10,6 +10,9 @@ import {
   ShoppingSearchAnalysisResult,
   ShoppingPlatformData,
   BrandComparisonResult,
+  BrandComparisonData,
+  BrandKeywordComparisonGPTAnalysis,
+  BrandContentComparisonGPTAnalysis,
   ContentType,
   KeywordType,
   channelNames,
@@ -39,6 +42,9 @@ export default async function handler(
       adAnalysis,
       shoppingAnalysis,
       brandComparison,
+      brandKeywordExpansionGPT,
+      brandContentComparisonGPT,
+      brandAdAnalysis,
     }: IntegratedReportRequest = req.body;
 
     if (!keyword) {
@@ -50,10 +56,10 @@ export default async function handler(
     }
 
     // 분석 데이터 요약 생성
-    const dataSummary = buildDataSummary(keyword, keywordType, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
+    const dataSummary = buildDataSummary(keyword, keywordType, keywordExpansion, keywordExpansionGPTAnalysis, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison, brandKeywordExpansionGPT, brandContentComparisonGPT, brandAdAnalysis);
 
     // GPT를 사용하여 종합 리포트 생성
-    const report = await generateIntegratedReport(keyword, keywordType, companyName, dataSummary, keywordExpansion, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison);
+    const report = await generateIntegratedReport(keyword, keywordType, companyName, dataSummary, keywordExpansion, contentAnalysis, adAnalysis, shoppingAnalysis, brandComparison, brandKeywordExpansionGPT, brandContentComparisonGPT, brandAdAnalysis);
 
     res.status(200).json({ report });
   } catch (error) {
@@ -381,7 +387,10 @@ function buildDataSummary(
   contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
   adAnalysis?: AdAnalysisResult,
   shoppingAnalysis?: ShoppingSearchAnalysisResult,
-  brandComparison?: BrandComparisonResult
+  brandComparison?: BrandComparisonResult,
+  brandKeywordExpansionGPT?: BrandKeywordComparisonGPTAnalysis,
+  brandContentComparisonGPT?: BrandContentComparisonGPTAnalysis,
+  brandAdAnalysis?: Array<{ brandKeyword: string; isOwnBrand: boolean; result: AdAnalysisResult }>
 ): string {
   // 분석 목적 컨텍스트 추가
   const analysisContext: Record<KeywordType, string> = {
@@ -607,7 +616,7 @@ function buildDataSummary(
       });
     }
 
-    // 경쟁사 브랜드들
+    // 경쟁사 브랜드들 (상세 데이터 포함)
     summary += '\n### 경쟁사 브랜드 비교\n';
     brandComparison.competitors.forEach((comp: any, idx: number) => {
       summary += `\n${idx + 1}. ${comp.brandKeyword}\n`;
@@ -615,33 +624,53 @@ function buildDataSummary(
         const compKeywords = comp.keywordExpansion.keywordList;
         summary += `   - 연관 키워드 수: ${compKeywords.length}개\n`;
         if (compKeywords.length > 0) {
-          summary += `   - 주요 연관 키워드: ${compKeywords.slice(0, 5).map((k: any) => k.relKeyword).join(', ')}\n`;
+          // 상위 15개 키워드를 검색량/CTR/경쟁도와 함께 표시
+          summary += `   - 검색량 상위 15개 키워드:\n`;
+          compKeywords.slice(0, 15).forEach((k: any, i: number) => {
+            const pcVol = k.monthlyPcQcCnt === '< 10' ? '10미만' : parseInt(k.monthlyPcQcCnt).toLocaleString();
+            const moVol = k.monthlyMobileQcCnt === '< 10' ? '10미만' : parseInt(k.monthlyMobileQcCnt).toLocaleString();
+            const ctr = k.monthlyAveMobileCtr !== '< 10' ? `${parseFloat(k.monthlyAveMobileCtr).toFixed(1)}%` : '-';
+            summary += `     ${i + 1}. ${k.relKeyword} - PC: ${pcVol}, 모바일: ${moVol}, CTR: ${ctr}, 경쟁도: ${k.compIdx}\n`;
+          });
         }
       }
-      // 경쟁사 감성 분석
+      // 경쟁사 감성 분석 + 감성 키워드
       if (comp.contentAnalysis) {
         const channels = ['blog', 'cafe', 'youtube', 'news'] as const;
-        let totalPositive = 0, totalNegative = 0, channelCount = 0;
+        let totalPositive = 0, totalNegative = 0, totalNeutral = 0, channelCount = 0;
         channels.forEach(ch => {
           const data = comp.contentAnalysis?.[ch];
           if (data?.sentiment) {
             totalPositive += data.sentiment.positive || 0;
             totalNegative += data.sentiment.negative || 0;
+            totalNeutral += data.sentiment.neutral || 0;
             channelCount++;
           }
         });
         if (channelCount > 0) {
-          summary += `   - 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
+          summary += `   - 평균 감성: 긍정 ${Math.round(totalPositive / channelCount)}%, 중립 ${Math.round(totalNeutral / channelCount)}%, 부정 ${Math.round(totalNegative / channelCount)}%\n`;
         }
-        // 경쟁사 브랜드 작성일 분포
+        // 채널별 감성 + 상위 긍정/부정 키워드
         channels.forEach(ch => {
           const data = comp.contentAnalysis?.[ch] as any;
-          if (data?.dateAnalysis) {
+          if (!data) return;
+          if (data.sentiment) {
+            summary += `   - [${channelNames[ch]}] 긍정 ${data.sentiment.positive}%, 중립 ${data.sentiment.neutral}%, 부정 ${data.sentiment.negative}%`;
+            const pos = (data.sentiment.positiveKeywords || []).slice(0, 5).map((k: any) => `${k.keyword}(${k.score})`).join(', ');
+            const neg = (data.sentiment.negativeKeywords || []).slice(0, 5).map((k: any) => `${k.keyword}(${k.score})`).join(', ');
+            if (pos) summary += `; 긍정키워드: ${pos}`;
+            if (neg) summary += `; 부정키워드: ${neg}`;
+            summary += `\n`;
+          }
+          if (data.keywords && data.keywords.length > 0) {
+            summary += `     상위 키워드: ${data.keywords.slice(0, 8).map((k: any) => `${k.keyword}(${k.frequency})`).join(', ')}\n`;
+          }
+          if (data.dateAnalysis) {
             const da = data.dateAnalysis;
             const dated = da.threeMonths + da.oneYear + da.twoYears + da.older;
             if (dated > 0) {
               const pct = (n: number) => Math.round(n / dated * 100);
-              summary += `   - ${ch} 작성일 분포 (${dated}개): 최근3개월 ${da.threeMonths}개(${pct(da.threeMonths)}%), 3개월~1년 ${da.oneYear}개(${pct(da.oneYear)}%), 1~2년 ${da.twoYears}개(${pct(da.twoYears)}%), 2년+ ${da.older}개(${pct(da.older)}%)\n`;
+              summary += `     작성일 (${dated}개): 최근3개월 ${da.threeMonths}(${pct(da.threeMonths)}%), 3개월~1년 ${da.oneYear}(${pct(da.oneYear)}%), 1~2년 ${da.twoYears}(${pct(da.twoYears)}%), 2년+ ${da.older}(${pct(da.older)}%)\n`;
             }
           }
         });
@@ -656,6 +685,74 @@ function buildDataSummary(
       count: b.keywordExpansion?.keywordList?.length || 0,
     })).sort((a, b) => b.count - a.count);
     summary += `- 연관 키워드 수 순위: ${brandKeywordCounts.map((b, i) => `${i + 1}. ${b.name}(${b.count}개)`).join(', ')}\n`;
+
+    // === Step 2 AI 키워드 비교 분석 결과 ===
+    if (brandKeywordExpansionGPT) {
+      summary += '\n### AI 키워드 비교 분석 (Step 2)\n';
+      brandKeywordExpansionGPT.perBrand.forEach((p) => {
+        summary += `\n#### ${p.brandKeyword}${p.isOwnBrand ? ' (자사)' : ''}\n`;
+        summary += `- 검색량: ${p.searchVolumeAnalysis}\n`;
+        summary += `- 관여도: ${p.engagementAnalysis}\n`;
+        summary += `- 경쟁: ${p.competitionAnalysis}\n`;
+        summary += `- 트렌드: ${p.consumerTrendAnalysis}\n`;
+        summary += `- 결론: ${p.conclusion}\n`;
+      });
+      summary += `\n#### 브랜드 비교 인사이트\n`;
+      summary += `- SOV 해석: ${brandKeywordExpansionGPT.comparison.sovInterpretation}\n`;
+      summary += `- 키워드 겹침: ${brandKeywordExpansionGPT.comparison.keywordOverlap}\n`;
+      summary += `- 자사 우위: ${brandKeywordExpansionGPT.comparison.competitiveAdvantage}\n`;
+      summary += `- 위협 키워드: ${(brandKeywordExpansionGPT.comparison.threatKeywords || []).join(', ') || '-'}\n`;
+      summary += `- 기회 키워드: ${(brandKeywordExpansionGPT.comparison.opportunityKeywords || []).join(', ') || '-'}\n`;
+      summary += `- 전략 권고: ${brandKeywordExpansionGPT.comparison.strategicRecommendation}\n`;
+    }
+
+    // === Step 3 AI 콘텐츠 비교 분석 결과 ===
+    if (brandContentComparisonGPT) {
+      summary += '\n### AI 콘텐츠 비교 분석 (Step 3)\n';
+      brandContentComparisonGPT.perBrand.forEach((p) => {
+        summary += `\n#### ${p.brandKeyword}${p.isOwnBrand ? ' (자사)' : ''}\n`;
+        summary += `- 강점: ${(p.strengths || []).join('; ') || '-'}\n`;
+        summary += `- 약점: ${(p.weaknesses || []).join('; ') || '-'}\n`;
+        summary += `- 감성 해석: ${p.sentimentInterpretation}\n`;
+        summary += `- 연관 이미지: ${(p.topAssociations || []).join(', ') || '-'}\n`;
+        if (p.channelHighlights) {
+          Object.entries(p.channelHighlights).forEach(([ch, note]) => {
+            if (note) summary += `- [${channelNames[ch as ContentType] || ch}]: ${note}\n`;
+          });
+        }
+      });
+      summary += `\n#### 콘텐츠 비교 인사이트\n`;
+      summary += `- 감성 격차: ${brandContentComparisonGPT.comparison.sentimentGapAnalysis}\n`;
+      summary += `- 인식 포지셔닝: ${brandContentComparisonGPT.comparison.perceivedPositioning}\n`;
+      (brandContentComparisonGPT.comparison.keyDifferentiators || []).forEach((d) => {
+        summary += `- 차별화(${d.dimension}): 자사 "${d.ownBrand}" vs 경쟁 "${d.competitors}"\n`;
+      });
+      summary += `- 경쟁 위협: ${(brandContentComparisonGPT.comparison.competitiveThreats || []).join('; ') || '-'}\n`;
+      summary += `- 성장 기회: ${(brandContentComparisonGPT.comparison.growthOpportunities || []).join('; ') || '-'}\n`;
+    }
+  }
+
+  // === 브랜드별 광고 분석 데이터 (브랜드 유형, Step 4 자사 + 경쟁사) ===
+  if (keywordType === 'brand' && brandAdAnalysis && brandAdAnalysis.length > 0) {
+    summary += '\n## 브랜드별 광고 분석 데이터 (자사 + 경쟁사)\n';
+    brandAdAnalysis.forEach((item) => {
+      if (!item.result) return;
+      summary += `\n### ${item.brandKeyword}${item.isOwnBrand ? ' (자사)' : ' (경쟁사)'}\n`;
+      summary += `- 광고 순위: ${item.result.ourAd.rank > 0 ? `${item.result.ourAd.rank}위` : '미노출'}\n`;
+      if (item.result.ourAd.rank > 0) {
+        summary += `- 제목 평가: ${item.result.ourAd.evaluation.title}\n`;
+        summary += `- 설명 평가: ${item.result.ourAd.evaluation.description}\n`;
+      }
+      if (item.result.competitorAnalysis) {
+        summary += `- 동시 노출 경쟁사 광고 분석: ${item.result.competitorAnalysis.replace(/\n+/g, ' / ')}\n`;
+      }
+      if (item.result.adSuggestions && item.result.adSuggestions.length > 0) {
+        summary += `- 광고 개선 제안:\n`;
+        item.result.adSuggestions.slice(0, 3).forEach((s, i) => {
+          summary += `  ${i + 1}. ${s.title} — ${s.description}\n`;
+        });
+      }
+    });
   }
 
   return summary;
@@ -960,7 +1057,10 @@ function getTypeSpecificJsonTemplate(keywordType: KeywordType, metrics: PreMetri
       "title": "브랜드 비교",
       "insight": "경쟁 브랜드와의 비교 행동 및 SOV 분석",
       "keywords": ["브랜드비교", "vs"],
-      "metrics": "SOV 관련 수치"
+      "metrics": "SOV 관련 수치",
+      "brandSovTable": [
+        {"brand": "${b ? b.ownBrandName : '자사'}", "sov": ${b ? b.sov : 0}, "rank": 1}
+      ]
     },
     "stage3_conversion": {
       "title": "브랜드 전환 장벽",
@@ -989,7 +1089,10 @@ function getTypeSpecificJsonTemplate(keywordType: KeywordType, metrics: PreMetri
     "competitionAnalysis": {
       "level": "높음",
       "insight": "브랜드 경쟁 구도 분석 (SOV 비교, 감성 비교, 강약점)",
-      "keyPlayers": ["경쟁 브랜드1", "경쟁 브랜드2"]
+      "keyPlayers": ["경쟁 브랜드1", "경쟁 브랜드2"],
+      "brandSnapshots": [
+        {"brand": "${b ? b.ownBrandName : '자사'}", "sov": ${b ? b.sov : 0}, "sentiment": {"positive": ${b ? b.ownPositive : 0}, "negative": ${b ? b.ownNegative : 0}}, "shortNote": "자사 한 줄 요약"}
+      ]
     },
     "digitalTrends": {
       "mobileShare": "${mobileShare}%",
@@ -1062,6 +1165,37 @@ function getTypeSpecificJsonTemplate(keywordType: KeywordType, metrics: PreMetri
       {"phase": "30d", "label": "콘텐츠 캠페인 실행", "category": "CONTENT", "action": "브랜드 스토리텔링 콘텐츠 제작 및 배포"},
       {"phase": "60d", "label": "경쟁 대응 전략 가동", "category": "DEFENSE", "action": "자사 키워드 방어 및 경쟁사 키워드 공략"},
       {"phase": "90d", "label": "로열티 프로그램 론칭", "category": "LOYALTY", "action": "충성 고객 유지 및 경쟁사 고객 전환 프로그램 실행"}
+    ]
+  },
+  "brandComparison": {
+    "comparisonMatrix": [
+      {"metric": "월 검색량", "ownValue": "${b ? b.ownSearchVolume.toLocaleString() + '건' : '0건'}", "competitors": [{"brandKeyword": "경쟁사1", "value": "수치"}], "winner": "own", "insight": "비교 인사이트 1-2문장"},
+      {"metric": "SOV", "ownValue": "${b ? b.sov + '%' : '0%'}", "competitors": [{"brandKeyword": "경쟁사1", "value": "수치%"}], "winner": "own", "insight": "SOV 인사이트"},
+      {"metric": "긍정 감성", "ownValue": "${b ? b.ownPositive + '%' : '0%'}", "competitors": [{"brandKeyword": "경쟁사1", "value": "수치%"}], "winner": "own", "insight": "감성 인사이트"},
+      {"metric": "연관 키워드 수", "ownValue": "${b ? b.ownKeywordCount + '개' : '0개'}", "competitors": [{"brandKeyword": "경쟁사1", "value": "수치개"}], "winner": "neutral", "insight": "키워드 인사이트"},
+      {"metric": "평균 모바일 CTR", "ownValue": "${metrics.avgMobileCtr}", "competitors": [{"brandKeyword": "경쟁사1", "value": "수치%"}], "winner": "neutral", "insight": "CTR 인사이트"}
+    ],
+    "sov": {
+      "ownShare": ${b ? b.sov : 0},
+      "competitorShares": [{"brandKeyword": "경쟁사1", "share": 0}],
+      "interpretation": "SOV 분포 해석 (2-3문장)"
+    },
+    "ownStrengths": ["자사 강점1", "자사 강점2", "자사 강점3"],
+    "ownWeaknesses": ["자사 약점1", "자사 약점2"],
+    "competitorProfiles": [
+      {"brandKeyword": "경쟁사1", "positioning": "한 줄 포지셔닝", "strengths": ["강점1", "강점2"], "weaknesses": ["약점1"], "threatLevel": "high", "counterStrategy": "자사 대응 전략"}
+    ],
+    "differentiationAxes": [
+      {"axis": "가격|품질|신뢰도|디자인 등", "description": "차별화 축 설명", "ownPosition": "자사 포지션", "competitorPosition": "경쟁사 포지션"}
+    ],
+    "conquestKeywords": [
+      {"keyword": "공략 가능 키워드", "currentLeader": "현재 우위 브랜드", "rationale": "공략 근거"}
+    ],
+    "keywordComparison": [
+      {"keyword": "공통 키워드", "ownRank": 1, "competitorRanks": [{"brandKeyword": "경쟁사1", "rank": 3}]}
+    ],
+    "sentimentComparison": [
+      {"brandKeyword": "${b ? b.ownBrandName : '자사'}", "positive": ${b ? b.ownPositive : 0}, "neutral": 0, "negative": ${b ? b.ownNegative : 0}, "topPositiveKeywords": ["키워드1"], "topNegativeKeywords": ["키워드2"]}
     ]
   },
   ${commonConclusion}
@@ -1209,7 +1343,10 @@ async function generateIntegratedReport(
   contentAnalysis: { blog?: KeywordAnalysisResult; cafe?: KeywordAnalysisResult; youtube?: KeywordAnalysisResult; news?: KeywordAnalysisResult },
   adAnalysis?: AdAnalysisResult,
   shoppingAnalysis?: ShoppingSearchAnalysisResult,
-  brandComparison?: BrandComparisonResult
+  brandComparison?: BrandComparisonResult,
+  brandKeywordExpansionGPT?: BrandKeywordComparisonGPTAnalysis,
+  brandContentComparisonGPT?: BrandContentComparisonGPTAnalysis,
+  brandAdAnalysis?: Array<{ brandKeyword: string; isOwnBrand: boolean; result: AdAnalysisResult }>
 ): Promise<IntegratedReportData> {
 
   // 사전 지표 계산
@@ -1248,7 +1385,16 @@ async function generateIntegratedReport(
 - 브랜드 키워드 점유율(SOV) 분석
 - 경쟁 브랜드 대비 강점/약점
 - 브랜드 포지셔닝 및 차별화 전략
-핵심 질문: "우리 브랜드가 경쟁사 대비 어떤 위치이며, 어떻게 차별화할 것인가"`,
+핵심 질문: "우리 브랜드가 경쟁사 대비 어떤 위치이며, 어떻게 차별화할 것인가"
+
+【브랜드 비교 섹션 작성 규칙】
+- 응답 JSON에는 반드시 brandComparison 섹션을 포함해야 합니다.
+- 자사 vs 각 경쟁사를 5개 차원(월 검색량, SOV, 긍정 감성, 연관 키워드 수, 평균 CTR)으로 비교한 comparisonMatrix를 작성하세요.
+- 경쟁사 각각에 대해 competitorProfiles에서 positioning, strengths, weaknesses, threatLevel, counterStrategy를 빠짐없이 작성하세요.
+- "Step 2 AI 키워드 비교 분석"과 "Step 3 AI 콘텐츠 비교 분석" 결과를 brandComparison.ownStrengths/ownWeaknesses/competitorProfiles/differentiationAxes 등에 정확히 반영하세요.
+- marketEnvironment.competitionAnalysis.brandSnapshots와 perceptionStages.stage2_comparison.brandSovTable에도 자사+경쟁사 모든 브랜드의 수치 데이터를 채워주세요.
+- adAnalysis 데이터가 있으면 actionStrategies 중 최소 1개 전략에 광고 순위·개선 제안을 구체적으로 인용하세요.
+- "브랜드별 광고 분석 데이터(자사 + 경쟁사)"가 제공되면, 각 경쟁사의 광고 순위/제목·설명 평가/개선 제안을 brandComparison.competitorProfiles[].weaknesses 또는 strengths에 직접 인용하세요. 또한 actionStrategies 중 한 전략(예: 경쟁 방어 또는 브랜드 SOV 확대)에서 경쟁사 광고 카피를 분석한 결과를 활용해 차별화 권고를 작성하세요.`,
     };
 
     return basePrompt + typeSpecificPrompt[type];
@@ -1272,10 +1418,17 @@ async function generateIntegratedReport(
 
 【필수 데이터 참조 지침】
 1. 자사/경쟁사별 연관 키워드 수, 감성 수치를 Executive Summary에 정확히 인용
-2. SOV와 감성 격차를 perceptionStages.stage2_comparison에 명시
-3. 각 경쟁사 브랜드명과 감성 수치를 competitionAnalysis.keyPlayers에 구체적 나열
+2. SOV와 감성 격차를 perceptionStages.stage2_comparison에 명시. brandSovTable에는 모든 브랜드(자사 + 경쟁사)의 sov/rank를 채울 것
+3. 각 경쟁사 브랜드명과 감성 수치를 competitionAnalysis.keyPlayers에 구체적 나열하고, brandSnapshots에 sov/sentiment/shortNote도 모두 채울 것
 4. 자사 vs 경쟁사 연관 키워드 랭킹을 keywordMap.dataInsights에서 비교
 5. 채널별 작성일 분포 데이터가 있으면 contentFreshness에 실제 수치 기반으로 반영하고, contentDateAnalysis에 채널별 분포와 요약을 정확히 작성
+6. brandComparison.comparisonMatrix는 5개 핵심 차원(월 검색량/SOV/긍정 감성/연관 키워드 수/평균 CTR)으로 작성하고, 각 행의 winner를 결정하며 insight 1-2문장 작성
+7. brandComparison.competitorProfiles는 입력 데이터의 경쟁사 N개 모두를 1:1 매핑하여 positioning/strengths/weaknesses/threatLevel/counterStrategy를 모두 채울 것 (빈 배열 금지)
+8. brandComparison.differentiationAxes는 Step 3 AI 콘텐츠 비교 분석의 keyDifferentiators를 그대로 활용 (3-5개)
+9. brandComparison.conquestKeywords는 Step 2 AI 키워드 비교의 opportunityKeywords를 활용해 작성
+10. brandComparison.sentimentComparison은 자사+모든 경쟁사 각각의 채널 평균 감성(긍/중/부)과 topPositiveKeywords/topNegativeKeywords(상위 5개)를 포함
+11. 광고 분석 데이터가 있으면 actionStrategies 중 최소 1개 전략에 광고 순위/제안을 명시
+12. "브랜드별 광고 분석 데이터"가 있으면 각 경쟁사의 광고 순위·제목·설명 평가를 brandComparison.competitorProfiles[].positioning 또는 weaknesses에 명시하고, marketEnvironment.competitionAnalysis.insight에서도 경쟁사 광고 활동 수준을 언급
 수치를 임의 생성하지 말고, 제공된 실제 수치를 정확히 인용하세요.`;
     }
     // general
@@ -1335,6 +1488,170 @@ ${getTypeSpecificJsonTemplate(keywordType, metrics)}`;
 
     try {
       const parsedResponse = JSON.parse(responseText);
+
+      // === 브랜드 비교 폴백 데이터 생성 (GPT가 비웠을 경우 대비) ===
+      const buildBrandComparisonFallback = () => {
+        if (keywordType !== 'brand' || !brandComparison || !metrics.brand) return undefined;
+        const b = metrics.brand;
+        const ownName = b.ownBrandName;
+        const competitorCount = b.competitorCount;
+
+        // sentimentComparison: 자사 + 경쟁사
+        const sentimentRows = [
+          {
+            brandKeyword: ownName,
+            positive: b.ownPositive,
+            neutral: Math.max(0, 100 - b.ownPositive - b.ownNegative),
+            negative: b.ownNegative,
+            topPositiveKeywords: [] as string[],
+            topNegativeKeywords: [] as string[],
+          },
+          ...b.competitors.map(c => ({
+            brandKeyword: c.name,
+            positive: c.positive,
+            neutral: Math.max(0, 100 - c.positive - c.negative),
+            negative: c.negative,
+            topPositiveKeywords: [] as string[],
+            topNegativeKeywords: [] as string[],
+          })),
+        ];
+
+        // 자사/경쟁사 상위 긍정·부정 키워드 추출
+        const channels: ContentType[] = ['blog', 'cafe', 'youtube', 'news'];
+        const collectTopSentimentKeywords = (brand: any) => {
+          const posMap = new Map<string, number>();
+          const negMap = new Map<string, number>();
+          channels.forEach(ch => {
+            const d = brand?.contentAnalysis?.[ch];
+            (d?.sentiment?.positiveKeywords || []).forEach((k: any) => {
+              posMap.set(k.keyword, (posMap.get(k.keyword) || 0) + (k.score || 1));
+            });
+            (d?.sentiment?.negativeKeywords || []).forEach((k: any) => {
+              negMap.set(k.keyword, (negMap.get(k.keyword) || 0) + (k.score || 1));
+            });
+          });
+          const sortBy = (m: Map<string, number>) => Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+          return { topPos: sortBy(posMap), topNeg: sortBy(negMap) };
+        };
+        const ownKw = collectTopSentimentKeywords(brandComparison.ownBrand);
+        sentimentRows[0].topPositiveKeywords = ownKw.topPos;
+        sentimentRows[0].topNegativeKeywords = ownKw.topNeg;
+        brandComparison.competitors.forEach((comp, idx) => {
+          const k = collectTopSentimentKeywords(comp);
+          sentimentRows[idx + 1].topPositiveKeywords = k.topPos;
+          sentimentRows[idx + 1].topNegativeKeywords = k.topNeg;
+        });
+
+        // 비교 매트릭스 (실데이터 기반)
+        const compMatrix = [
+          {
+            metric: '월 검색량',
+            ownValue: `${b.ownSearchVolume.toLocaleString()}건`,
+            competitors: b.competitors.map(c => ({ brandKeyword: c.name, value: `${c.searchVolume.toLocaleString()}건` })),
+            winner: (b.competitors.length === 0 || b.ownSearchVolume >= Math.max(...b.competitors.map(c => c.searchVolume), 0)) ? 'own' as const : 'competitor' as const,
+            insight: `자사 검색량은 ${b.ownSearchVolume.toLocaleString()}건이며 전체 ${b.totalBrandVolume.toLocaleString()}건 중 ${b.sov}%를 차지`,
+          },
+          {
+            metric: 'SOV (검색 점유율)',
+            ownValue: `${b.sov}%`,
+            competitors: b.competitors.map(c => ({
+              brandKeyword: c.name,
+              value: `${b.totalBrandVolume > 0 ? ((c.searchVolume / b.totalBrandVolume) * 100).toFixed(1) : 0}%`,
+            })),
+            winner: (b.sov >= 50 ? 'own' : (b.sov < 30 ? 'competitor' : 'neutral')) as 'own' | 'competitor' | 'neutral',
+            insight: b.sov >= 50 ? 'SOV에서 자사 우위' : (b.sov < 30 ? 'SOV에서 자사 열위' : 'SOV 격차 미세'),
+          },
+          {
+            metric: '긍정 감성',
+            ownValue: `${b.ownPositive}%`,
+            competitors: b.competitors.map(c => ({ brandKeyword: c.name, value: `${c.positive}%` })),
+            winner: (b.competitors.length === 0 || b.ownPositive >= Math.max(...b.competitors.map(c => c.positive), 0)) ? 'own' as const : 'competitor' as const,
+            insight: `자사 긍정 감성 ${b.ownPositive}% / 부정 ${b.ownNegative}%`,
+          },
+        ];
+
+        // competitor shares
+        const competitorShares = b.competitors.map(c => ({
+          brandKeyword: c.name,
+          share: b.totalBrandVolume > 0 ? parseFloat(((c.searchVolume / b.totalBrandVolume) * 100).toFixed(1)) : 0,
+        }));
+
+        // GPT 결과 활용
+        const ownInsightFromGPT = brandContentComparisonGPT?.perBrand.find(p => p.isOwnBrand);
+        const compProfilesFromGPT = (brandContentComparisonGPT?.perBrand || []).filter(p => !p.isOwnBrand);
+
+        return {
+          comparisonMatrix: compMatrix,
+          sov: {
+            ownShare: b.sov,
+            competitorShares,
+            interpretation: brandKeywordExpansionGPT?.comparison.sovInterpretation
+              || `자사 SOV ${b.sov}% (총 검색량 ${b.totalBrandVolume.toLocaleString()}건 중)`,
+          },
+          ownStrengths: ownInsightFromGPT?.strengths || [],
+          ownWeaknesses: ownInsightFromGPT?.weaknesses || [],
+          competitorProfiles: b.competitors.map((c) => {
+            const gpt = compProfilesFromGPT.find(p => p.brandKeyword === c.name);
+            const compAd = brandAdAnalysis?.find(a => a.brandKeyword === c.name && !a.isOwnBrand);
+            const adNote = compAd
+              ? `광고 ${compAd.result.ourAd.rank > 0 ? `${compAd.result.ourAd.rank}위 노출` : '미노출'}`
+              : '';
+            const positioning = gpt?.sentimentInterpretation
+              || [`검색량 ${c.searchVolume.toLocaleString()}건`, `긍정 감성 ${c.positive}%`, adNote]
+                  .filter(Boolean).join(', ');
+            // 광고 분석 결과에서 강·약점 보강
+            const adStrength = compAd && compAd.result.ourAd.rank > 0
+              ? `광고 ${compAd.result.ourAd.rank}위 노출 (제목 평가: ${compAd.result.ourAd.evaluation.title})`
+              : null;
+            const adWeakness = compAd && compAd.result.ourAd.rank === 0
+              ? '광고 미노출로 검색 트래픽 손실 가능'
+              : null;
+            const counterStrategy = compAd && compAd.result.adSuggestions?.length > 0
+              ? `경쟁사 광고 분석 결과: ${compAd.result.adSuggestions[0].title} — ${compAd.result.adSuggestions[0].description}`
+              : '';
+            return {
+              brandKeyword: c.name,
+              positioning,
+              strengths: [...(gpt?.strengths || []), ...(adStrength ? [adStrength] : [])],
+              weaknesses: [...(gpt?.weaknesses || []), ...(adWeakness ? [adWeakness] : [])],
+              threatLevel: (c.searchVolume > b.ownSearchVolume * 0.7 ? 'high' : (c.searchVolume > b.ownSearchVolume * 0.3 ? 'medium' : 'low')) as 'high' | 'medium' | 'low',
+              counterStrategy,
+            };
+          }),
+          differentiationAxes: (brandContentComparisonGPT?.comparison.keyDifferentiators || []).map(d => ({
+            axis: d.dimension,
+            description: '',
+            ownPosition: d.ownBrand,
+            competitorPosition: d.competitors,
+          })),
+          conquestKeywords: (brandKeywordExpansionGPT?.comparison.opportunityKeywords || []).slice(0, 5).map(kw => ({
+            keyword: kw,
+            currentLeader: '경쟁사',
+            rationale: brandKeywordExpansionGPT?.comparison.strategicRecommendation || '공략 가능 키워드',
+          })),
+          keywordComparison: [],
+          sentimentComparison: sentimentRows,
+        };
+      };
+
+      // GPT 응답 brandComparison을 폴백과 머지
+      const mergeBrandComparison = (gpt: any, fallback: any): any => {
+        if (!fallback) return undefined;
+        if (!gpt) return fallback;
+        return {
+          comparisonMatrix: Array.isArray(gpt.comparisonMatrix) && gpt.comparisonMatrix.length > 0 ? gpt.comparisonMatrix : fallback.comparisonMatrix,
+          sov: gpt.sov && typeof gpt.sov.ownShare === 'number' ? gpt.sov : fallback.sov,
+          ownStrengths: Array.isArray(gpt.ownStrengths) && gpt.ownStrengths.length > 0 ? gpt.ownStrengths : fallback.ownStrengths,
+          ownWeaknesses: Array.isArray(gpt.ownWeaknesses) && gpt.ownWeaknesses.length > 0 ? gpt.ownWeaknesses : fallback.ownWeaknesses,
+          competitorProfiles: Array.isArray(gpt.competitorProfiles) && gpt.competitorProfiles.length > 0 ? gpt.competitorProfiles : fallback.competitorProfiles,
+          differentiationAxes: Array.isArray(gpt.differentiationAxes) && gpt.differentiationAxes.length > 0 ? gpt.differentiationAxes : fallback.differentiationAxes,
+          conquestKeywords: Array.isArray(gpt.conquestKeywords) && gpt.conquestKeywords.length > 0 ? gpt.conquestKeywords : fallback.conquestKeywords,
+          keywordComparison: Array.isArray(gpt.keywordComparison) ? gpt.keywordComparison : fallback.keywordComparison,
+          sentimentComparison: Array.isArray(gpt.sentimentComparison) && gpt.sentimentComparison.length > 0 ? gpt.sentimentComparison : fallback.sentimentComparison,
+        };
+      };
+
+      const brandComparisonFallback = buildBrandComparisonFallback();
 
       // 리포트 데이터 구조화
       const report: IntegratedReportData = {
@@ -1401,6 +1718,10 @@ ${getTypeSpecificJsonTemplate(keywordType, metrics)}`;
         },
 
         contentDateAnalysis: parsedResponse.contentDateAnalysis || undefined,
+
+        brandComparison: keywordType === 'brand'
+          ? mergeBrandComparison(parsedResponse.brandComparison, brandComparisonFallback)
+          : undefined,
       };
 
       return report;
